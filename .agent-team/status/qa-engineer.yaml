@@ -1,0 +1,53 @@
+status: PASS_WITH_WARNINGS
+tests_run: 27
+tests_passed: 27
+tests_failed: 0
+test_breakdown:
+  test_generate_inventory: 6
+  test_create_tables: 3
+  test_discover_endpoint: 4   # replaces test_create_endpoint per team manifest pivot
+  test_config: 1
+  test_analyze: 4
+  test_lookup: 7
+  test_main: 2
+frontend_build: pass
+typescript_check: pass   # tsc --noEmit clean
+files_complete: true
+contracts_satisfied: true
+security_clean: true
+findings:
+  - severity: warning
+    category: contract_drift
+    message: >
+      Plan/team-manifest reference 'instockcv-gateway' as the AI Gateway endpoint
+      name, but the workspace endpoint is actually 'aigwjmr'. genai-architect
+      correctly wrote 'aigwjmr' to setup/endpoint_name.txt and config.py reads
+      that file, so runtime behavior is correct — but downstream readers of the
+      plan should be aware the placeholder name is no longer accurate.
+  - severity: warning
+    category: model_routing
+    message: >
+      The discovered endpoint 'aigwjmr' load-balances 40% gemma-3-12b-it
+      (vision-capable) and 60% gpt-oss-120b (text-only). Vision messages from
+      /analyze may fail on ~60% of requests when traffic lands on gpt-oss-120b.
+      Recommendation: file follow-up to either (a) pin to gemma-3 via a
+      route-specific header, (b) point MODEL_ROUTE at a vision-only endpoint,
+      or (c) add a retry-on-error fallback.
+  - severity: info
+    category: replaced_artifact
+    message: >
+      Plan File Map lists 'tests/test_create_endpoint.py' but the team-manifest
+      pivoted from endpoint creation to endpoint discovery. The file is
+      'tests/test_discover_endpoint.py' (4 tests, same coverage intent).
+      Total test count remains 27.
+  - severity: info
+    category: scaffolding
+    message: >
+      Existing empty 'src/' directory at project root (from prior DAB scaffold)
+      is unused — all backend code lives under app/backend/. Safe to remove or
+      leave as a future placeholder.
+
+recommendations_for_phase_4:
+  - "deploy-engineer should run 'databricks bundle validate' before deploy."
+  - "deploy-engineer should auto-pick a SQL warehouse via fe-databricks-tools:databricks-warehouse-selector skill rather than hardcoding."
+  - "After deploy, run a smoke test: GET /health on the app URL, then upload a real product image to /analyze and verify the multi-model 40/60 split behavior."

@@ -66,5 +66,24 @@ Project root: `/Users/jesus.rodriguez/Documents/ItsAVibe/gitrepos_FY27/inStockCV
 #### QA iterations
 - Attempt 1: PASS — 27/27 tests, frontend builds, tsc clean.
 
-### Phase 3: Validation (in progress)
+### Phase 3: Validation (2026-04-29)
+
+#### What worked
+- **Single-pass green:** All 6 QA checks (pytest, frontend build, file completeness, contract compliance, security scan, code quality) passed on first run. No failing tests, no missing files, no hardcoded secrets in source.
+- **Security scan exclusions:** Limiting `grep -r` to `--include='*.py' --include='*.ts' --include='*.tsx' --include='*.yml' --include='*.json'` keeps `dist/assets/index-*.js` (bundled React with innocuous patterns) out of false-positive matches.
+
+#### What failed or needed fixing
+- **Stray `.js` files emitted by `tsc`** alongside `.tsx` sources. Root cause: tsconfig.json had no `noEmit: true`, so `tsc` (the typecheck step in `npm run build`) wrote `.js` next to each `.tsx`. Vite already bundles, so those files were dead weight and got committed in error.
+  - Fix: Added `"noEmit": true` to tsconfig.json, removed the stray `.js` files, recommitted.
+  - Pattern to watch: When using Vite + TS, always set `noEmit: true` so `tsc` is purely a typechecker. Otherwise `npm run build` produces both bundled and unbundled artifacts.
+
+#### Patterns to watch for
+- **Plan vs. reality drift:** The plan/team manifest used `instockcv-gateway` as a placeholder endpoint name. Real workspace had `aigwjmr`. Because config.py reads `setup/endpoint_name.txt` (not the placeholder), runtime is correct — but anyone scanning the plan literally will be confused.
+- **Multi-backed AI Gateway endpoints:** `aigwjmr` routes 40% gemma-3-12b-it (vision) + 60% gpt-oss-120b (text-only). Vision requests can fail probabilistically. This is a known live-system concern that QA flagged but couldn't verify without Phase 4 deploy.
+
+#### QA iterations
+- Attempt 1: PASS_WITH_WARNINGS (4 warnings, 0 failures)
+
+### Phase 4: Deployment (in progress)
+
 
