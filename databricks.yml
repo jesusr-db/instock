@@ -3,20 +3,30 @@ bundle:
 
 variables:
   catalog:
+    description: Unity Catalog name
     default: main
   schema:
+    description: Schema name (production)
     default: instockcv
   schema_dev:
+    description: Schema name (development)
     default: instockcv_dev
+  deploy_oss_model:
+    description: Set to 'true' to deploy Qwen3-VL-8B OSS model endpoint
+    default: "false"
+  sql_warehouse_http_path:
+    description: HTTP path for the SQL warehouse used by the app
+    default: ""
 
 targets:
   dev:
     mode: development
     default: true
-    workspace:
-      host: ${workspace.host}
+    variables:
+      schema: instockcv_dev
 
   prod:
     mode: production
-    workspace:
-      host: ${workspace.host}
+
+include:
+  - resources/*.yml

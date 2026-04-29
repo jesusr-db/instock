@@ -1,0 +1,22 @@
+resources:
+  jobs:
+    setup_job:
+      name: "[inStockCV] Setup"
+
+      tasks:
+        - task_key: provision_tables
+          spark_python_task:
+            python_file: ../setup/create_tables.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+          environment_key: default
+
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+            dependencies:
+              - "databricks-sdk>=0.28.0"
