@@ -44,4 +44,27 @@ Project root: `/Users/jesus.rodriguez/Documents/ItsAVibe/gitrepos_FY27/inStockCV
 #### QA iterations
 - Attempt 1: PASS — all 13 tests green, bundle validates, endpoint_name.txt populated.
 
-### Phase 2: Application (in progress)
+### Phase 2: Application (2026-04-29)
+
+#### What worked
+- **TDD across 4 backend modules:** config → analyze → lookup → main. Each module: write tests, hit ImportError red, implement, hit green. No surprise regressions across the chain.
+- **`os.environ.update()` at top of test files** to satisfy `Settings()` required-fields validation worked cleanly with pydantic-settings v2. Combined with `monkeypatch.setenv` + `get_settings.cache_clear()` in test_config to test reload behavior.
+- **Frontend stack picked clean:** Vite 5 + React 18 + TS 5.4 — `npm install` finished in 20s, `npm run build` in 388ms, `tsc --noEmit` clean. No type warnings.
+- **Vite dev proxy** routes `/analyze`, `/lookup`, `/health`, `/config` to FastAPI on :8000 — supports a single `npm run dev` + `uvicorn` flow without CORS glue beyond what we already added.
+
+#### What failed or needed fixing
+- **None on the first pass.** All 14 backend tests went red on missing modules (expected for TDD), then green on first implementation attempt. Frontend built first try.
+
+#### Patterns to watch for
+- **MODEL_ROUTE default reads from setup/endpoint_name.txt:** `_default_model_route()` walks two candidate paths (relative to file, then cwd-relative). Fragile if the file moves; if config.py is reorganized the path constants must be updated.
+- **`databricks-sql-connector` is imported at module load time in lookup.py.** It pulls in pyarrow + thrift, which can be slow. Consider lazy import inside `_fetch_inventory()` if cold-start latency becomes a problem.
+- **Settings class uses `extra="ignore"`** so unrecognized env vars are dropped silently. That's intentional for forward compat (deploy-engineer may add ADDITIONAL_MODEL_ROUTES, etc.) but masks typos in env names — be deliberate.
+
+#### Concerns flagged for downstream phases
+- The `aigwjmr` endpoint hosts gemma-3-12b-it (vision-capable) + gpt-oss-120b (text-only) at 40/60 traffic split. Live `/analyze` calls may fail on ~60% of requests. Phase 3 should add an integration smoke test; Phase 4 deploy may need to swap to a vision-only endpoint or pin a route header.
+
+#### QA iterations
+- Attempt 1: PASS — 27/27 tests, frontend builds, tsc clean.
+
+### Phase 3: Validation (in progress)
+

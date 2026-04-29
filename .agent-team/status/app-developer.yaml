@@ -1,0 +1,29 @@
+status: DONE
+artifacts:
+  - app/backend/config.py
+  - app/backend/analyze.py
+  - app/backend/lookup.py
+  - app/backend/main.py
+  - app/backend/requirements.txt
+  - app/frontend/package.json
+  - app/frontend/package-lock.json
+  - app/frontend/tsconfig.json
+  - app/frontend/vite.config.ts
+  - app/frontend/index.html
+  - app/frontend/src/main.tsx
+  - app/frontend/src/api.ts
+  - app/frontend/src/ScanPanel.tsx
+  - app/frontend/src/ResultCard.tsx
+  - app/frontend/src/App.tsx
+  - app/frontend/dist/index.html
+  - app/frontend/dist/assets/
+  - tests/test_config.py
+  - tests/test_analyze.py
+  - tests/test_lookup.py
+  - tests/test_main.py
+tests_passing: 14
+total_tests: 27
+frontend_build: success
+typescript_check: pass
+concerns: []
+blockers: []
