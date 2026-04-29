@@ -21,7 +21,9 @@ A Databricks App that allows a store employee to photograph a product on a shelf
 |---|---|---|
 | Frontend | React (Vite) | Mobile-optimized upload UI and result display |
 | Backend | FastAPI | Image intake, AI Gateway calls, Delta lookup |
-| AI Model | GPT-4o via AI Gateway | Vision analysis, structured attribute + SKU extraction |
+| AI Model (default) | GPT-4o via AI Gateway | Vision analysis, structured attribute + SKU extraction |
+| AI Model (OSS option) | Qwen3-VL-8B (self-hosted) | Open-source VLM; same interface, no external API calls |
+| Detection model (optional) | YOLOv8 shelf detector | Stage 1: product localization + count from shelf photos |
 | Model Router | Databricks AI Gateway | Abstraction layer; swap models via env var |
 | Inventory store | Delta table (`inventory`) | Synthetic product catalog, ~500 SKUs |
 | Audit log | Delta table (`scan_log`) | Append-only record of every scan |
@@ -97,18 +99,46 @@ No app-level auth. Databricks App runtime handles workspace-level access. The ap
 | `SCAN_LOG_TABLE` | Fully-qualified Delta table | required |
 | `IMAGE_VOLUME_PATH` | Unity Catalog volume root path | required |
 | `OPENAI_API_KEY_SECRET` | Databricks secret scope + key for OpenAI key | required |
+| `DEPLOY_OSS_MODEL` | Deploy Qwen3-VL-8B OSS model endpoint in setup_job | `false` |
+| `USE_DETECTION_STAGE` | Enable YOLOv8 pre-detection stage in /analyze | `false` |
 
 The app SP's runtime token is used for all Databricks SDK/SQL calls — no hardcoded credentials.
 
 ---
 
-## AI Gateway
+## AI Gateway & Model Options
+
+The AI Gateway serves as the abstraction layer — the backend calls a named route, and the route config determines which model runs. Swapping models requires no code changes, only an env var update and (if adding a new model) a new serving endpoint.
+
+### Default Route: GPT-4o (External)
 
 - **Type:** External model serving endpoint (OpenAI provider)
-- **Default route:** GPT-4o (`gpt-4o`)
+- **Default route name:** `gpt-4o`
 - **Created by:** `setup_job` using Databricks Python SDK (`workspace_client.serving_endpoints.create()`)
-- **Model swap:** Add a new named route to the endpoint and update `MODEL_ROUTE` env var — no code changes
 - **OpenAI API key:** Stored in Databricks Secrets; injected into the serving endpoint config by `setup_job`
+
+### Optional Route: Qwen3-VL-8B (Open Source, Self-Hosted)
+
+A fully open-source alternative deployable inside the Databricks workspace — no external API calls, no data leaving the environment. This is the strongest demo story for data-sensitive customers.
+
+- **Model:** `Qwen/Qwen3-VL-8B-Instruct` (HuggingFace, Apache 2.0)
+- **Why:** Best open-source VLM for reading product labels — OCR-grade text extraction, structured JSON output, runs on a single A10 GPU
+- **Deployment:** Custom MLflow `pyfunc` model logged to Unity Catalog, served via Databricks Model Serving GPU endpoint
+- **AI Gateway route name:** `qwen3-vl`
+- **Created by:** `setup_job` (optional step, skipped if `DEPLOY_OSS_MODEL=false`)
+
+### Optional Two-Stage Pipeline (Detection + Identification)
+
+For images containing multiple products or full shelf displays, a two-stage approach improves accuracy:
+
+1. **Stage 1 — YOLOv8 shelf detector** (`foduucom/product-detection-in-shelf-yolov8`, mAP@0.5 = 0.91): Detects and crops individual product regions from the shelf image, counts items per slot. Runs on CPU.
+2. **Stage 2 — VLM (GPT-4o or Qwen3-VL):** Receives the cropped region(s) and returns structured brand/product/size attributes.
+
+The two-stage path is enabled by setting `USE_DETECTION_STAGE=true` in the backend config. When disabled, the full image is sent directly to the VLM (simpler, sufficient for single-product close-up photos).
+
+### Model selector in UI
+
+The frontend model dropdown exposes whichever AI Gateway routes are configured. The `setup_job` writes the list of active routes to a config endpoint (`GET /config/models`) so the frontend doesn't need to be redeployed when routes change.
 
 ---
 
@@ -154,10 +184,11 @@ Category distribution: ~200 tobacco, ~200 beverage, ~100 snack SKUs.
 
 ### `setup_job` responsibilities (runs as app SP):
 1. Create AI Gateway external model serving endpoint (GPT-4o, via Python SDK)
-2. Create `inventory` Delta table; generate and load ~500 synthetic rows (deterministic seed)
-3. Create `scan_log` Delta table
-4. Create Unity Catalog volume for image uploads
-5. Grant app SP: `USE CATALOG`, `USE SCHEMA`, `SELECT`, `MODIFY` on tables and volume
+2. *(Optional)* Deploy Qwen3-VL-8B as a custom MLflow model on a GPU serving endpoint; register as AI Gateway route `qwen3-vl` (controlled by `DEPLOY_OSS_MODEL` env var)
+3. Create `inventory` Delta table; generate and load ~500 synthetic rows (deterministic seed)
+4. Create `scan_log` Delta table
+5. Create Unity Catalog volume for image uploads
+6. Grant app SP: `USE CATALOG`, `USE SCHEMA`, `SELECT`, `MODIFY` on tables and volume
 
 ### Permissions model:
 - App runtime uses the app service principal's injected token for all operations
@@ -188,7 +219,8 @@ inStockCV/
 │       ├── package.json
 │       └── vite.config.ts
 └── setup/
-    ├── create_endpoint.py       # AI Gateway endpoint creation
+    ├── create_endpoint.py       # AI Gateway endpoint creation (GPT-4o + optional Qwen3-VL)
+    ├── deploy_oss_model.py      # Log + register Qwen3-VL-8B MLflow model (optional)
     ├── create_tables.py         # Delta table creation
     └── generate_inventory.py    # Synthetic data generation
 ```
@@ -199,5 +231,6 @@ inStockCV/
 
 - Store employee can upload a photo from a phone and receive a result in < 10 seconds
 - Fuzzy match returns the correct SKU for clearly-labeled product photos
-- Model can be swapped (GPT-4o → Claude) by changing one env var and redeploying
+- Model can be swapped (GPT-4o → Qwen3-VL → Claude) by changing one env var and redeploying
+- Open-source Qwen3-VL-8B path deployable with `DEPLOY_OSS_MODEL=true` — no external API calls
 - Full environment (tables, endpoint, app) stands up from `databricks bundle deploy` + running the setup job
