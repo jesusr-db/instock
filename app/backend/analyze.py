@@ -18,7 +18,7 @@ import uuid
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from openai import OpenAI
 
-from backend.config import get_settings
+from backend.config import get_databricks_token, get_settings
 
 router = APIRouter()
 
@@ -96,7 +96,7 @@ async def analyze(
     mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
 
     client = OpenAI(
-        api_key=settings.databricks_token,
+        api_key=get_databricks_token(settings),
         base_url=f"{settings.databricks_host}/serving-endpoints",
     )
     try:

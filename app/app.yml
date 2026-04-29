@@ -1,0 +1,19 @@
+command:
+  - uvicorn
+  - backend.main:app
+  - --host
+  - "0.0.0.0"
+  - --port
+  - "8000"
+
+env:
+  - name: MODEL_ROUTE
+    value: aigwjmr
+  - name: INVENTORY_TABLE
+    value: vdm_classic_rikfy0_catalog.instockcv_dev.inventory
+  - name: SCAN_LOG_TABLE
+    value: vdm_classic_rikfy0_catalog.instockcv_dev.scan_log
+  - name: IMAGE_VOLUME_PATH
+    value: /Volumes/vdm_classic_rikfy0_catalog/instockcv_dev/scan_images
+  - name: SQL_WAREHOUSE_HTTP_PATH
+    value: /sql/1.0/warehouses/5067b513037fbf07

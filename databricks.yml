@@ -1,10 +1,16 @@
 bundle:
   name: instockcv
 
+sync:
+  # The React build output is in .gitignore (so it doesn't pollute commits),
+  # but the deployed app needs it — uvicorn serves it as static files.
+  include:
+    - app/frontend/dist/**
+
 variables:
   catalog:
-    description: Unity Catalog name
-    default: main
+    description: Unity Catalog name (override per workspace)
+    default: vdm_classic_rikfy0_catalog
   schema:
     description: Schema name (production)
     default: instockcv

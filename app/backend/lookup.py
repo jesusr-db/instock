@@ -17,7 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
-from backend.config import Settings, get_settings
+from backend.config import Settings, get_databricks_token, get_settings
 
 router = APIRouter()
 
@@ -72,7 +72,7 @@ def _fetch_inventory(settings: Settings) -> list[dict]:
     with dbsql.connect(
         server_hostname=host,
         http_path=settings.sql_warehouse_http_path,
-        access_token=settings.databricks_token,
+        access_token=get_databricks_token(settings),
     ) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -90,7 +90,7 @@ def _write_scan_log(settings: Settings, row: dict) -> None:
         with dbsql.connect(
             server_hostname=host,
             http_path=settings.sql_warehouse_http_path,
-            access_token=settings.databricks_token,
+            access_token=get_databricks_token(settings),
         ) as conn:
             with conn.cursor() as cur:
                 cur.execute(

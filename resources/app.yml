@@ -1,0 +1,6 @@
+resources:
+  apps:
+    instockcv:
+      name: "instockcv"
+      source_code_path: ../app
+      description: "Mobile-optimized retail inventory checker — photograph a product, get SKU + quantity. FastAPI backend + React frontend, AI Gateway for vision."

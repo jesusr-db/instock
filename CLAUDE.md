@@ -7,11 +7,28 @@ Project root: `/Users/jesus.rodriguez/Documents/ItsAVibe/gitrepos_FY27/inStockCV
 
 ## Quick reference
 
-- **Catalog/schema:** `main.instockcv` (prod) / `main.instockcv_dev` (dev)
+- **Live app URL:** `https://instockcv-1351565862180944.aws.databricksapps.com`
+- **Workspace:** `fe-vm-vdm-classic-rikfy0.cloud.databricks.com` (DEFAULT profile)
+- **Catalog/schema:** `vdm_classic_rikfy0_catalog.instockcv_dev` (dev — only deployed target so far)
+- **Tables:** `inventory` (462 rows), `scan_log`
+- **UC Volume:** `vdm_classic_rikfy0_catalog.instockcv_dev.scan_images`
 - **AI Gateway endpoint:** `aigwjmr` (discovered via `setup/discover_endpoint.py`)
-- **Bundle target:** `dev` (default), `prod`
-- **Run tests:** `pytest tests/ -v`
+- **SQL warehouse:** Serverless Starter Warehouse (`/sql/1.0/warehouses/5067b513037fbf07`)
+- **Setup job ID:** `913830059117370`
+- **Run tests:** `pytest tests/ -v` (27 tests, all pass)
+- **Build frontend:** `cd app/frontend && npm run build`
 - **Validate bundle:** `DATABRICKS_CONFIG_PROFILE=DEFAULT databricks bundle validate`
+- **Re-deploy:**
+  ```
+  DATABRICKS_CONFIG_PROFILE=DEFAULT \
+  DATABRICKS_TF_EXEC_PATH=/opt/homebrew/bin/terraform DATABRICKS_TF_VERSION=1.14.9 \
+  databricks bundle deploy --target dev \
+    --var sql_warehouse_http_path=/sql/1.0/warehouses/5067b513037fbf07
+  databricks apps deploy instockcv \
+    --source-code-path /Workspace/Users/jesus.rodriguez@databricks.com/.bundle/instockcv/dev/files/app \
+    --profile=DEFAULT
+  ```
+- **Run setup_job:** `DATABRICKS_CONFIG_PROFILE=DEFAULT databricks bundle run setup_job --target dev`
 
 ## Introspection
 
@@ -84,6 +101,67 @@ Project root: `/Users/jesus.rodriguez/Documents/ItsAVibe/gitrepos_FY27/inStockCV
 #### QA iterations
 - Attempt 1: PASS_WITH_WARNINGS (4 warnings, 0 failures)
 
-### Phase 4: Deployment (in progress)
+### Phase 4: Deployment (2026-04-29)
+
+#### What worked
+- **Final state:** App is live at `https://instockcv-1351565862180944.aws.databricksapps.com`. `/health` and `/config/models` return 200; SPA root serves the Vite-bundled React app. Setup job ran successfully and loaded 462 inventory rows into `vdm_classic_rikfy0_catalog.instockcv_dev.inventory`. Tables and UC volume provisioned cleanly.
+- **DAB + Apps:** Adding `resources/app.yml` with `source_code_path: ../app` was the correct path; the bundle uploads `app/` to `/Workspace/.../files/app/` and `databricks apps deploy --source-code-path ...` consumes it.
+- **Warehouse-selector skill** auto-picked the only running serverless warehouse (`Serverless Starter Warehouse`, id `5067b513037fbf07`) without prompting.
+
+#### What failed or needed fixing (this phase had the most fix iterations)
+
+1. **Terraform signature key expired (CLI bug).**
+   - Error: `error downloading Terraform: unable to verify checksums signature: openpgp: key expired`
+   - Root cause: Databricks CLI v0.294.0's bundled GPG key for Hashicorp's signature verification is expired.
+   - Fix: `brew reinstall terraform` to get a fresh binary, then deploy with `DATABRICKS_TF_EXEC_PATH=/opt/homebrew/bin/terraform DATABRICKS_TF_VERSION=1.14.9` so the CLI uses the local copy and skips re-downloading.
+
+2. **`from setup.generate_inventory import ...` failed in the Databricks job.**
+   - Error: `ModuleNotFoundError: No module named 'setup'`
+   - Root cause: Databricks runs spark_python_task files via `exec(compile(f.read(), filename, 'exec'))`. The package import context isn't preserved, AND `__file__` is undefined because the code is being exec'd, not imported.
+   - First attempted fix (sys.path += dirname(__file__)): failed because `__file__` is undefined.
+   - Working fix: rewrote `_load_generate_inventory()` as a 3-strategy resolver — try plain import first, fall back to `__file__`-relative path (wrapped in try/except NameError), fall back to cwd-relative. Robust across CLI / pytest / Databricks job.
+   - Pattern to watch: For Databricks job tasks that need to import sibling files, use `importlib.util.spec_from_file_location` rather than relying on package context.
+
+3. **`DELTA_FAILED_TO_MERGE_FIELDS: quantity_on_hand` on table overwrite.**
+   - Error: pyspark inferred `quantity_on_hand` as `LongType` from Python `int`s, but the DDL defines it as `INT` (= `IntegerType`). Delta's overwrite-with-schema-evolution refused the merge.
+   - Fix: Build the DataFrame with an explicit `StructType`/`IntegerType` schema in `create_tables.py`. Tests still pass because the explicit-schema branch only runs when pyspark is importable; mocked tests work either way.
+   - Pattern to watch: When loading list-of-dict data into a Delta table with NOT NULL int columns, ALWAYS pass an explicit schema. Inferred types differ between Python and Spark.
+
+4. **Catalog `main` not accessible in this workspace.**
+   - Error: `PERMISSION_DENIED: Catalog 'main' is not accessible in current workspace`
+   - Fix: Updated databricks.yml default to `vdm_classic_rikfy0_catalog` (the workspace's user catalog), updated `app/app.yml` and `.env.example` to match. The team manifest's `main.instockcv` references are now overridden everywhere.
+   - Pattern to watch: Don't assume a `main` catalog exists. Always discover available catalogs first (`databricks catalogs list`) or use a workspace-aware default.
+
+5. **App crashed: `ModuleNotFoundError: No module named 'openai'`.**
+   - Root cause: Databricks Apps installs `requirements.txt` from the app source root, not `app/backend/requirements.txt`.
+   - Fix: Copied `app/backend/requirements.txt` to `app/requirements.txt`. Both files are now kept in sync.
+   - Pattern to watch: For Databricks Apps, requirements.txt MUST be at the source root (the directory pointed to by `source_code_path`).
+
+6. **App crashed: `ValidationError: databricks_token Field required`.**
+   - Root cause: Databricks Apps don't set `DATABRICKS_TOKEN` env var. The platform exposes OAuth m2m credentials via `DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET`, picked up automatically by the SDK.
+   - Fix: Made `databricks_token: Optional[str] = None` in Settings; added `get_databricks_token(settings)` helper that returns the env var if set, else mints one via `WorkspaceClient().config.authenticate()`. Both analyze.py and lookup.py now call this helper instead of reading the token directly.
+   - Pattern to watch: For Databricks Apps, prefer SDK auth over env-var tokens. Make tokens optional and resolve via the SDK at call time. Also note `DATABRICKS_HOST` lacks the `https://` scheme in Databricks Apps — config now prepends it via `model_post_init`.
+
+7. **SPA root returned 404 — frontend dist not deployed.**
+   - Root cause: `.gitignore` had `app/frontend/dist/` which DAB respects by default during sync.
+   - Fix: Added `sync.include: [app/frontend/dist/**]` block at the top of databricks.yml. Bundle now uploads dist while keeping it out of git.
+   - Pattern to watch: For DAB-deployed apps with a built frontend, always add an explicit `sync.include` for build outputs that you intentionally `.gitignore`.
+
+#### QA iterations
+- Attempt 1: PASS — final smoke tests show /, /health, /config/models all 200.
+
+### Final State
+
+The inStockCV app is end-to-end deployed and accessible:
+- **Frontend:** Vite-bundled React, served at `/` of the app URL
+- **Backend:** FastAPI with /analyze, /lookup, /health, /config/models
+- **Data:** 462 synthetic SKUs in `vdm_classic_rikfy0_catalog.instockcv_dev.inventory`, scan_log table, scan_images UC volume
+- **Auth:** OAuth m2m (auto-provisioned by Databricks Apps platform)
+- **Model:** AI Gateway endpoint `aigwjmr` (40% gemma-3-12b-it / 60% gpt-oss-120b)
+
+Outstanding follow-ups (not blocking):
+- Endpoint multi-model concern (gpt-oss-120b is text-only): file a workspace ticket to add a vision-only AI Gateway, OR pin to gemma-3 via a route header in /analyze.
+- Roadmap item: deploy Qwen3-VL-8B OSS model (Optional Task 16, requires GPU cluster).
+
 
 

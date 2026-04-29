@@ -13,6 +13,8 @@ venv/
 
 # Node / frontend
 node_modules/
+# Frontend build output: ignored from git but explicitly included in DAB sync
+# via the sync.include block in databricks.yml so the deployed app can serve it.
 app/frontend/dist/
 
 # OS
