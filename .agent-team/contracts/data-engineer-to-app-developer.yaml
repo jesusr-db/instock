@@ -1,0 +1,99 @@
+name: data-engineer-to-app-developer
+producer: data-engineer
+consumer: app-developer
+consumed_in_phase: 2
+
+description: >
+  Data engineer produces project scaffold + synthetic inventory Delta tables.
+  App developer uses table schemas to implement the /lookup endpoint and config module.
+
+tables:
+  - name: inventory
+    catalog: "{{catalog}}"
+    schema: "{{schema}}"
+    description: >
+      Synthetic retail product inventory — ~500 SKUs across tobacco, beverage, snack categories.
+      Created by setup/create_tables.py and loaded with synthetic data from generate_inventory.py.
+    columns:
+      - name: sku_id
+        type: STRING
+        required: true
+      - name: brand
+        type: STRING
+        required: true
+      - name: category
+        type: STRING
+        required: true
+      - name: product_name
+        type: STRING
+        required: true
+      - name: size
+        type: STRING
+        required: true
+      - name: flavor
+        type: STRING
+        required: false
+      - name: quantity_on_hand
+        type: INT
+        required: true
+    min_rows: 450
+
+  - name: scan_log
+    catalog: "{{catalog}}"
+    schema: "{{schema}}"
+    description: >
+      Audit log of all product scans performed by the app.
+      Written asynchronously by the /lookup endpoint.
+    columns:
+      - name: scan_id
+        type: STRING
+        required: true
+      - name: scanned_at
+        type: TIMESTAMP
+        required: true
+      - name: model_route
+        type: STRING
+        required: false
+      - name: image_volume_path
+        type: STRING
+        required: false
+      - name: model_brand
+        type: STRING
+        required: false
+      - name: model_product_name
+        type: STRING
+        required: false
+      - name: model_size
+        type: STRING
+        required: false
+      - name: matched_sku_id
+        type: STRING
+        required: false
+      - name: match_score
+        type: FLOAT
+        required: false
+      - name: quantity_on_hand
+        type: INT
+        required: false
+
+artifacts:
+  - path: setup/generate_inventory.py
+    description: Pure function returning list of dicts — no external dependencies
+  - path: setup/create_tables.py
+    description: DDL + Spark data loading; accepts (spark, catalog, schema, seed) args
+  - path: databricks.yml
+    description: DAB bundle config with catalog/schema/secret variables
+  - path: resources/setup_job.yml
+    description: Setup job with provision_tables → create_endpoint tasks
+  - path: tests/test_generate_inventory.py
+    description: 6 unit tests for inventory generator
+  - path: tests/test_create_tables.py
+    description: 3 unit tests for DDL and Spark mock
+
+validation:
+  - type: schema_match
+    description: /lookup endpoint SELECT query must reference all required inventory columns
+  - type: artifact_exists
+    description: All listed setup/ and resources/ files exist in project
+  - type: artifact_exists
+    description: databricks.yml has variables section with catalog, schema, openai_secret_scope, openai_secret_key

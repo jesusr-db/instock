@@ -1,0 +1,68 @@
+project: inStockCV
+started: 2026-04-29T00:00:00Z
+last_updated: 2026-04-29T00:00:00Z
+current_state:
+  phase: 1
+  step: read_phase_config
+
+phases:
+  - id: 1
+    name: Foundation
+    status: in_progress
+    steps:
+      read_phase_config: in_progress
+      resolve_contracts: pending
+      dispatch_agents: pending
+      await_agents: pending
+      merge_worktrees: pending
+      qa_gate: pending
+      update_progress: pending
+      introspection: pending
+    agents:
+      data-engineer: pending
+      genai-architect: pending
+
+  - id: 2
+    name: Application
+    status: pending
+    steps:
+      read_phase_config: pending
+      resolve_contracts: pending
+      dispatch_agents: pending
+      await_agents: pending
+      merge_worktrees: pending
+      qa_gate: pending
+      update_progress: pending
+      introspection: pending
+    agents:
+      app-developer: pending
+
+  - id: 3
+    name: Validation
+    status: pending
+    steps:
+      read_phase_config: pending
+      resolve_contracts: pending
+      dispatch_agents: pending
+      await_agents: pending
+      merge_worktrees: pending
+      qa_gate: pending
+      update_progress: pending
+      introspection: pending
+    agents:
+      qa-engineer: pending
+
+  - id: 4
+    name: Deployment
+    status: pending
+    steps:
+      read_phase_config: pending
+      resolve_contracts: pending
+      dispatch_agents: pending
+      await_agents: pending
+      merge_worktrees: pending
+      qa_gate: pending
+      update_progress: pending
+      introspection: pending
+    agents:
+      deploy-engineer: pending

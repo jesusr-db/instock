@@ -1,0 +1,40 @@
+id: 1
+name: Foundation
+description: >
+  Project scaffold, synthetic data pipeline, Delta tables, and AI Gateway endpoint.
+  data-engineer and genai-architect run in parallel — neither depends on the other.
+
+parallel_groups:
+  - id: 1
+    agents:
+      - name: data-engineer
+        worktree: true
+        tasks:
+          - "Task 1: Project scaffold — databricks.yml, resources/setup_job.yml, .gitignore, __init__.py files"
+          - "Task 2: Synthetic inventory generator — setup/generate_inventory.py + 6 tests (TDD)"
+          - "Task 3: Delta table DDL + data loading — setup/create_tables.py + 3 tests (TDD)"
+        exit_condition: "9 tests PASS, all scaffold files created"
+
+      - name: genai-architect
+        worktree: true
+        tasks:
+          - "Task 4: AI Gateway endpoint provisioning — setup/create_endpoint.py + 4 tests (TDD)"
+        exit_condition: "4 tests PASS, endpoint name = instockcv-gateway"
+
+steps:
+  read_phase_config: pending
+  resolve_contracts: pending
+  dispatch_agents: pending
+  await_agents: pending
+  merge_worktrees: pending
+  qa_gate: pending
+  update_progress: pending
+  introspection: pending
+
+qa_gate:
+  checks:
+    - "pytest tests/test_generate_inventory.py tests/test_create_tables.py tests/test_create_endpoint.py -v → all 13 tests PASS"
+    - "databricks.yml exists and is valid YAML"
+    - "resources/setup_job.yml exists with provision_tables and create_endpoint tasks"
+    - "ENDPOINT_NAME == 'instockcv-gateway'"
+  on_fail: retry_agent

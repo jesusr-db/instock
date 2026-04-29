@@ -1,0 +1,49 @@
+name: app-developer-to-deploy-engineer
+producer: app-developer
+consumer: deploy-engineer
+consumed_in_phase: 4
+
+description: >
+  App developer produces the complete FastAPI backend and React frontend build.
+  Deploy engineer uses these outputs to finalize app/app.yml and run bundle deploy.
+
+artifacts:
+  - path: app/backend/main.py
+    description: FastAPI app entry point; expects uvicorn invocation from app/app.yml
+  - path: app/backend/requirements.txt
+    description: All Python runtime dependencies for the app
+  - path: app/frontend/dist/
+    description: >
+      Built React SPA (output of npm run build). Must contain index.html + assets/.
+      Served as static files by FastAPI at / route.
+  - path: tests/
+    description: All 27 unit/integration tests — must pass before deployment
+
+api_shapes:
+  - path: GET /health
+    response: '{"status": "ok"}'
+  - path: GET /config/models
+    response: '{"models": ["instockcv-gateway"], "default": "instockcv-gateway"}'
+  - path: POST /analyze
+    request: multipart/form-data with file (image) + model_route (string)
+    response: AnalyzeResult JSON with scan_id, brand, category, product_name, size, flavor, top_3_sku_candidates
+  - path: POST /lookup
+    request: application/json (LookupRequest with scan_id, model_route, top_3_sku_candidates, ...)
+    response: LookupResult JSON with matched, sku_id, quantity_on_hand, match_score, confidence_label
+
+env_vars_required:
+  - DATABRICKS_HOST
+  - DATABRICKS_TOKEN
+  - MODEL_ROUTE (default: instockcv-gateway)
+  - INVENTORY_TABLE (e.g., main.instockcv.inventory)
+  - SCAN_LOG_TABLE (e.g., main.instockcv.scan_log)
+  - IMAGE_VOLUME_PATH (e.g., /Volumes/main/instockcv/scan_images)
+  - SQL_WAREHOUSE_HTTP_PATH
+
+validation:
+  - type: artifact_exists
+    description: app/frontend/dist/index.html exists
+  - type: artifact_exists
+    description: app/backend/requirements.txt exists with all dependencies
+  - type: code_references
+    description: app/backend/main.py mounts StaticFiles from app/frontend/dist/

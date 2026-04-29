@@ -1,0 +1,48 @@
+id: 2
+name: Application
+description: >
+  Full-stack implementation: FastAPI backend (config, /analyze, /lookup, main)
+  and React/TypeScript/Vite frontend (api.ts, ScanPanel, ResultCard, App).
+  Depends on Phase 1 outputs (table schemas + endpoint name).
+
+depends_on: [1]
+
+parallel_groups:
+  - id: 2
+    agents:
+      - name: app-developer
+        worktree: true
+        tasks:
+          - "Task 5: Backend config — app/backend/config.py + requirements.txt + 1 test (TDD)"
+          - "Task 6: /analyze endpoint — app/backend/analyze.py + 4 tests (TDD)"
+          - "Task 7: /lookup endpoint — app/backend/lookup.py + 7 tests (TDD)"
+          - "Task 8: FastAPI main — app/backend/main.py + 2 tests (TDD)"
+          - "Task 9: Frontend scaffold — package.json, vite.config.ts, index.html, tsconfig.json, src/main.tsx"
+          - "Task 10: API client — app/frontend/src/api.ts"
+          - "Task 11: ScanPanel — app/frontend/src/ScanPanel.tsx"
+          - "Task 12: ResultCard — app/frontend/src/ResultCard.tsx"
+          - "Task 13: App root + frontend build — app/frontend/src/App.tsx + npm run build"
+        exit_condition: "14 backend tests PASS, npm run build succeeds, dist/ created"
+
+input_contracts:
+  - contracts/data-engineer-to-app-developer.yaml
+  - contracts/genai-architect-to-app-developer.yaml
+
+steps:
+  read_phase_config: pending
+  resolve_contracts: pending
+  dispatch_agents: pending
+  await_agents: pending
+  merge_worktrees: pending
+  qa_gate: pending
+  update_progress: pending
+  introspection: pending
+
+qa_gate:
+  checks:
+    - "pytest tests/ -v → all 27 tests PASS (13 from Phase 1 + 14 from Phase 2)"
+    - "app/frontend/dist/index.html exists"
+    - "npx tsc --noEmit exits 0 (no TypeScript errors)"
+    - "/health returns {\"status\": \"ok\"}"
+    - "/config/models returns {\"models\": [...], \"default\": \"instockcv-gateway\"}"
+  on_fail: retry_agent

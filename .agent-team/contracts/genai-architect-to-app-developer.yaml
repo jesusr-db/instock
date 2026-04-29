@@ -1,0 +1,38 @@
+name: genai-architect-to-app-developer
+producer: genai-architect
+consumer: app-developer
+consumed_in_phase: 2
+
+description: >
+  GenAI architect discovers the existing AI Gateway GPT endpoint in the workspace
+  and writes its name to setup/endpoint_name.txt. App developer reads this file
+  to set the MODEL_ROUTE default in config.py and the /analyze endpoint call.
+
+artifacts:
+  - path: setup/discover_endpoint.py
+    description: >
+      Lists serving endpoints via Databricks SDK and identifies the AI Gateway
+      GPT endpoint. Writes the name to setup/endpoint_name.txt.
+  - path: setup/endpoint_name.txt
+    description: >
+      Single line — the resolved endpoint name (e.g. "databricks-meta-llama-3-1-70b-instruct"
+      or whatever GPT-compatible endpoint exists). App developer uses this as MODEL_ROUTE default.
+  - path: tests/test_discover_endpoint.py
+    description: 4 unit tests validating endpoint discovery logic with mocked SDK calls
+
+endpoint_contract:
+  source: discovered from workspace (DEFAULT profile), not created
+  task: llm/v1/chat
+  call_pattern: >
+    Use openai.OpenAI(api_key=DATABRICKS_TOKEN, base_url="{DATABRICKS_HOST}/serving-endpoints").
+    Pass model="{MODEL_ROUTE}" where MODEL_ROUTE comes from setup/endpoint_name.txt.
+    Vision messages: role=user, content=[{type:text,...}, {type:image_url, image_url:{url:"data:image/...;base64,..."}}]
+  credentials: DATABRICKS_TOKEN (no external OpenAI key needed)
+
+validation:
+  - type: artifact_exists
+    description: setup/endpoint_name.txt exists and contains a non-empty string
+  - type: code_references
+    description: app/backend/config.py MODEL_ROUTE default matches content of endpoint_name.txt
+  - type: code_references
+    description: app/backend/analyze.py uses DATABRICKS_HOST/serving-endpoints as base_url (no hardcoded OpenAI URL)
