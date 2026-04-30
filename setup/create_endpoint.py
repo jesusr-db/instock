@@ -19,10 +19,10 @@ from typing import Optional
 
 ENDPOINT_NAME = "instockcv-gateway"
 
-# Databricks Foundation Model (UC path) — Claude 3.7 Sonnet, vision-capable.
-# Available in workspaces with Databricks Foundation Model APIs enabled.
-# If this model is not available, check `system.ai` in your UC catalog browser.
-ENTITY_NAME = "system.ai.claude-3-7-sonnet-20250219"
+# UC path for Databricks-hosted Claude Sonnet 4.6 — vision-capable, no external creds.
+# Confirmed present in this workspace via `system.ai` catalog.
+ENTITY_NAME = "system.ai.databricks-claude-sonnet-4-6"
+ENTITY_VERSION = "1"
 
 POLL_INTERVAL_SECONDS = 30
 TIMEOUT_SECONDS = 900  # 15 minutes
@@ -61,14 +61,15 @@ def create_endpoint(workspace_client) -> None:
     workspace_client.serving_endpoints.create(
         name=ENDPOINT_NAME,
         config=EndpointCoreConfigInput(
+            name=ENDPOINT_NAME,
             served_entities=[
                 ServedEntityInput(
                     entity_name=ENTITY_NAME,
-                    name="claude-vision",
-                    min_provisioned_throughput=0,
-                    max_provisioned_throughput=100,
+                    entity_version=ENTITY_VERSION,
+                    name="claude-sonnet-4-6",
+                    provisioned_model_units=0,
                 )
-            ]
+            ],
         ),
         ai_gateway=AiGatewayConfig(
             usage_tracking_config=AiGatewayUsageTrackingConfig(enabled=True),
