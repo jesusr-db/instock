@@ -15,7 +15,6 @@ Usage (run as Databricks job task or locally with DEFAULT profile):
 from __future__ import annotations
 
 import os
-import sys
 from typing import Optional
 
 # Primary: dedicated endpoint (in case it was created separately)
@@ -79,15 +78,14 @@ def write_endpoint_name(name: str, output_path: str = DEFAULT_OUTPUT) -> None:
         f.write(name + "\n")
 
 
-def main() -> Optional[int]:
+def main() -> None:
     from databricks.sdk import WorkspaceClient
 
     w = WorkspaceClient()
     chosen = resolve_endpoint(w)
     write_endpoint_name(chosen)
     print(f"Endpoint name written to: {DEFAULT_OUTPUT}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    main()
