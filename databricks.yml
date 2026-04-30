@@ -22,7 +22,7 @@ variables:
     default: "false"
   sql_warehouse_http_path:
     description: HTTP path for the SQL warehouse used by the app
-    default: ""
+    default: /sql/1.0/warehouses/5067b513037fbf07
 
 targets:
   dev:
