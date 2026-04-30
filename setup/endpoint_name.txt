@@ -1,1 +1,1 @@
-instockcv-gateway
+databricks-claude-sonnet-4-6
