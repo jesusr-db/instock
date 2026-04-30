@@ -4,6 +4,11 @@ resources:
       name: "[inStockCV] Setup"
 
       tasks:
+        - task_key: create_endpoint
+          spark_python_task:
+            python_file: ../setup/create_endpoint.py
+          environment_key: default
+
         - task_key: provision_tables
           spark_python_task:
             python_file: ../setup/create_tables.py

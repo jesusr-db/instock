@@ -8,7 +8,7 @@ command:
 
 env:
   - name: MODEL_ROUTE
-    value: aigwjmr
+    value: instockcv-gateway
   - name: INVENTORY_TABLE
     value: vdm_classic_rikfy0_catalog.instockcv_dev.inventory
   - name: SCAN_LOG_TABLE
