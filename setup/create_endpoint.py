@@ -30,8 +30,8 @@ SYSTEM_ENDPOINT_NAME = "databricks-claude-sonnet-4-6"
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    # Databricks job context: __file__ undefined; fall back to cwd
-    _here = os.path.join(os.getcwd(), "setup")
+    # Databricks job context: __file__ undefined; CWD is already the setup/ dir
+    _here = os.getcwd()
 
 DEFAULT_OUTPUT = os.path.join(_here, "endpoint_name.txt")
 
