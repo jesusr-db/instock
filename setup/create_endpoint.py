@@ -61,8 +61,8 @@ def create_endpoint(workspace_client) -> None:
     if not host.startswith("https://"):
         host = f"https://{host}"
 
-    auth_headers: dict = {}
-    workspace_client.config.authenticate(auth_headers)
+    # authenticate() returns headers in this SDK version (no dict arg)
+    auth_headers: dict = workspace_client.config.authenticate()
 
     payload = {
         "name": ENDPOINT_NAME,
