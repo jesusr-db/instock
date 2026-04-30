@@ -50,31 +50,44 @@ def endpoint_exists(workspace_client) -> bool:
 
 
 def create_endpoint(workspace_client) -> None:
-    """Create instockcv-gateway backed by the Claude 3.7 Sonnet foundation model."""
-    from databricks.sdk.service.serving import (
-        AiGatewayConfig,
-        AiGatewayUsageTrackingConfig,
-        EndpointCoreConfigInput,
-        ServedEntityInput,
-    )
+    """Create instockcv-gateway via REST API (bypasses SDK typed-class validation).
 
-    workspace_client.serving_endpoints.create(
-        name=ENDPOINT_NAME,
-        config=EndpointCoreConfigInput(
-            name=ENDPOINT_NAME,
-            served_entities=[
-                ServedEntityInput(
-                    entity_name=ENTITY_NAME,
-                    entity_version=ENTITY_VERSION,
-                    name="claude-sonnet-4-6",
-                    provisioned_model_units=0,
-                )
-            ],
-        ),
-        ai_gateway=AiGatewayConfig(
-            usage_tracking_config=AiGatewayUsageTrackingConfig(enabled=True),
-        ),
+    Replicates the aigwjmr creation pattern: system.ai entity + provisioned_model_units=0
+    + AI Gateway usage tracking. Uses WorkspaceClient only for auth headers.
+    """
+    import requests
+
+    host = workspace_client.config.host
+    if not host.startswith("https://"):
+        host = f"https://{host}"
+
+    auth_headers: dict = {}
+    workspace_client.config.authenticate(auth_headers)
+
+    payload = {
+        "name": ENDPOINT_NAME,
+        "config": {
+            "served_entities": [
+                {
+                    "name": "claude-sonnet-4-6",
+                    "entity_name": ENTITY_NAME,
+                    "entity_version": ENTITY_VERSION,
+                    "provisioned_model_units": 0,
+                }
+            ]
+        },
+        "ai_gateway": {
+            "usage_tracking_config": {"enabled": True}
+        },
+    }
+
+    resp = requests.post(
+        f"{host}/api/2.0/serving-endpoints",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        json=payload,
+        timeout=30,
     )
+    resp.raise_for_status()
 
 
 def wait_for_ready(workspace_client, timeout: int = TIMEOUT_SECONDS) -> None:

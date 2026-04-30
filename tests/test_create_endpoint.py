@@ -29,25 +29,22 @@ class TestEndpointExists(unittest.TestCase):
 
 class TestCreateEndpoint(unittest.TestCase):
     def test_creates_endpoint_with_claude_foundation_model(self):
-        """create_endpoint() calls serving_endpoints.create with the correct endpoint name and entity."""
+        """create_endpoint() POSTs to the REST API with the correct endpoint name and entity."""
         mock_client = MagicMock()
+        mock_client.config.host = "https://fake.databricks.com"
+        mock_client.config.authenticate = MagicMock()
 
-        # Stub SDK service classes so the import inside create_endpoint() works
-        mock_serving = MagicMock()
-        for cls_name in [
-            "AiGatewayConfig",
-            "AiGatewayUsageTrackingConfig",
-            "EndpointCoreConfigInput",
-            "ServedEntityInput",
-        ]:
-            setattr(mock_serving, cls_name, MagicMock(return_value=MagicMock()))
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
 
-        with patch.dict("sys.modules", {"databricks.sdk.service.serving": mock_serving}):
+        with patch("requests.post", return_value=mock_response) as mock_post:
             ce.create_endpoint(mock_client)
 
-        mock_client.serving_endpoints.create.assert_called_once()
-        call_kwargs = mock_client.serving_endpoints.create.call_args.kwargs
-        self.assertEqual(call_kwargs["name"], ce.ENDPOINT_NAME)
+        mock_post.assert_called_once()
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(payload["name"], ce.ENDPOINT_NAME)
+        entity = payload["config"]["served_entities"][0]
+        self.assertEqual(entity["entity_name"], ce.ENTITY_NAME)
 
 
 class TestWriteEndpointName(unittest.TestCase):
