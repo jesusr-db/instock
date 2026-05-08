@@ -48,8 +48,7 @@ def test_settings_yolo_defaults(monkeypatch):
 
     settings = cfg_module.get_settings()
     assert settings.yolo_confidence_threshold == 0.3
-    assert isinstance(settings.yolo_endpoint, str)
-    assert len(settings.yolo_endpoint) > 0
+    assert settings.yolo_endpoint == "instockcv-yolo"
 
 
 def test_settings_yolo_threshold_override(monkeypatch):

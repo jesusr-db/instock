@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     image_volume_path: str
     sql_warehouse_http_path: str
     use_detection_stage: bool = False
+    # Default resolved at import time from setup/yolo_endpoint_name.txt;
+    # override with YOLO_ENDPOINT env var in production.
     yolo_endpoint: str = _default_yolo_endpoint()
     yolo_confidence_threshold: float = 0.3
 
