@@ -6,6 +6,8 @@ The backend runs FastAPI on Databricks Apps with OAuth m2m auth. The frontend is
 
 **Live app:** `https://instockcv-1351565862180944.aws.databricksapps.com`
 
+![inStockCV demo](instockcv-scan-to-sql.gif)
+
 ---
 
 ## How it works
