@@ -26,16 +26,28 @@ DEFAULT_OUTPUT = os.path.join(_here, "yolo_endpoint_name.txt")
 
 
 def _get_catalog_schema() -> tuple[str, str]:
-    catalog = os.environ.get("CATALOG", "vdm_classic_rikfy0_catalog")
-    schema = os.environ.get("SCHEMA", "instockcv_dev")
-    return catalog, schema
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--catalog", default=os.environ.get("CATALOG", "vdm_classic_rikfy0_catalog"))
+    parser.add_argument("--schema", default=os.environ.get("SCHEMA", "instockcv_dev"))
+    args, _ = parser.parse_known_args()
+    return args.catalog, args.schema
 
 
-def _log_yolo_model(catalog: str, schema: str) -> str:
-    """Log YoloPyfunc to UC. Returns the registered model URI."""
+def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
+    """Log YoloPyfunc to UC. Skips logging if model already has versions. Returns full_model_name."""
     import mlflow
     import mlflow.pyfunc
     import pandas as pd
+
+    mlflow.set_registry_uri("databricks-uc")
+    full_model_name = f"{catalog}.{schema}.{MODEL_NAME}"
+
+    # Idempotency check: skip if model already registered
+    existing = list(workspace_client.model_versions.list(full_model_name))
+    if existing:
+        print(f"Model '{full_model_name}' already has {len(existing)} version(s). Skipping log.")
+        return full_model_name
 
     class YoloPyfunc(mlflow.pyfunc.PythonModel):
         def load_context(self, context):
@@ -65,9 +77,6 @@ def _log_yolo_model(catalog: str, schema: str) -> str:
                 results.append({"detections": detections})
             return pd.DataFrame(results)
 
-    mlflow.set_registry_uri("databricks-uc")
-    full_model_name = f"{catalog}.{schema}.{MODEL_NAME}"
-
     with mlflow.start_run(run_name="yolo_shelf_detector_registration"):
         model_info = mlflow.pyfunc.log_model(
             artifact_path="model",
@@ -86,8 +95,11 @@ def _create_or_update_endpoint(
     workspace_client, full_model_name: str, model_version: str
 ) -> None:
     """Create instockcv-yolo endpoint if absent; skip if already READY."""
+    from databricks.sdk.errors import NotFound
     from databricks.sdk.service.serving import (
         EndpointCoreConfigInput,
+        EndpointStateConfigUpdate,
+        EndpointStateReady,
         ServedModelInput,
         ServedModelInputWorkloadSize,
     )
@@ -96,7 +108,7 @@ def _create_or_update_endpoint(
         ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
         print(f"Endpoint '{ENDPOINT_NAME}' already exists (state: {ep.state}). Skipping creation.")
         return
-    except Exception:
+    except NotFound:
         pass  # Does not exist — create it
 
     print(f"Creating endpoint '{ENDPOINT_NAME}'...")
@@ -117,11 +129,15 @@ def _create_or_update_endpoint(
     # Wait for READY (up to 10 minutes)
     for _ in range(60):
         ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
-        state = ep.state.ready if ep.state else None
-        print(f"  Endpoint state: {state}")
-        if str(state) == "EndpointStateReady.READY":
+        ready = ep.state.ready if ep.state else None
+        config_update = ep.state.config_update if ep.state else None
+        print(f"  Endpoint state: ready={ready} config_update={config_update}")
+        if str(ready) == "EndpointStateReady.READY":
             print(f"Endpoint '{ENDPOINT_NAME}' is READY.")
             return
+        if (str(ready) == "EndpointStateReady.NOT_READY" and
+                str(config_update) == "EndpointStateConfigUpdate.NOT_UPDATING"):
+            raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' failed to provision (terminal NOT_READY state).")
         time.sleep(10)
     raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' did not reach READY within 10 minutes.")
 
@@ -149,7 +165,7 @@ def main() -> None:
     catalog, schema = _get_catalog_schema()
     print(f"Using catalog={catalog} schema={schema}")
 
-    full_model_name = _log_yolo_model(catalog, schema)
+    full_model_name = _log_yolo_model(w, catalog, schema)
     model_version = _get_latest_model_version(w, full_model_name)
     print(f"Model version: {model_version}")
 
