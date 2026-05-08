@@ -1,6 +1,6 @@
 # inStockCV
 
-Mobile-optimized Databricks App (React + FastAPI) for retail store employees to photograph products on a shelf and instantly check live inventory quantities — no app install required, runs in a phone browser.
+Mobile-optimized Databricks App (React + FastAPI) for retail store employees to photograph products on a shelf and instantly check live inventory quantities — no app install required, runs in a browser.
 
 The backend runs FastAPI on Databricks Apps with OAuth m2m auth. The frontend is a Vite-bundled React SPA. Inventory data lives in Delta tables on Unity Catalog. All scans are logged to a `scan_log` table for audit and analytics.
 
