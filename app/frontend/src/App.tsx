@@ -11,6 +11,7 @@ const FALLBACK_MODEL = 'instockcv-gateway'
 export default function App() {
   const [state, setState] = useState<State>('idle')
   const [result, setResult] = useState<LookupResult | null>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [models, setModels] = useState<string[]>([FALLBACK_MODEL])
   const [selectedModel, setSelectedModel] = useState<string>(FALLBACK_MODEL)
@@ -29,6 +30,7 @@ export default function App() {
   async function handleSubmit(file: File) {
     setState('loading')
     setError(null)
+    setImageUrl(URL.createObjectURL(file))
     try {
       const analyzed = await analyzeImage(file, selectedModel)
       const looked = await lookupSku(analyzed)
@@ -41,7 +43,9 @@ export default function App() {
   }
 
   function reset() {
+    if (imageUrl) URL.revokeObjectURL(imageUrl)
     setResult(null)
+    setImageUrl(null)
     setError(null)
     setState('idle')
   }
@@ -64,7 +68,7 @@ export default function App() {
         )}
         {state === 'error' && error && <div style={s.errorBanner}>{error}</div>}
         {state === 'result' && result && (
-          <ResultCard result={result} onReset={reset} />
+          <ResultCard result={result} imageUrl={imageUrl} onReset={reset} />
         )}
       </main>
     </div>

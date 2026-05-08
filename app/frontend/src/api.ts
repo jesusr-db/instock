@@ -30,6 +30,7 @@ export interface LookupResult {
   sku_id: string | null
   product_name: string | null
   brand: string | null
+  size: string | null
   quantity_on_hand: number | null
   match_score: number
   confidence_label: 'High' | 'Medium' | 'Low'

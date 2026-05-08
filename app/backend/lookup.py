@@ -140,6 +140,7 @@ async def lookup(req: LookupRequest, background_tasks: BackgroundTasks):
         "sku_id": match["sku_id"] if matched else None,
         "product_name": match["product_name"] if matched else req.product_name,
         "brand": match["brand"] if matched else req.brand,
+        "size": match["size"] if matched else req.size,
         "quantity_on_hand": match["quantity_on_hand"] if matched else None,
         "match_score": match["match_score"] if matched else 0.0,
         "confidence_label": (

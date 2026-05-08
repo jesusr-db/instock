@@ -3,6 +3,7 @@ import type { LookupResult } from './api'
 
 interface Props {
   result: LookupResult
+  imageUrl: string | null
   onReset: () => void
 }
 
@@ -19,13 +20,16 @@ const BADGE_COLORS: Record<string, string> = {
   Low: '#dc2626',
 }
 
-export default function ResultCard({ result, onReset }: Props) {
+export default function ResultCard({ result, imageUrl, onReset }: Props) {
   return (
     <div style={s.card}>
+      {imageUrl && (
+        <img src={imageUrl} alt="Scanned product" style={s.thumb} />
+      )}
       {result.matched ? (
         <>
           <p style={s.productName}>{result.product_name ?? 'Unknown Product'}</p>
-          <p style={s.brand}>{result.brand}</p>
+          <p style={s.brand}>{result.brand}{result.size ? ` · ${result.size}` : ''}</p>
 
           <div style={s.row}>
             <span style={s.rowLabel}>SKU</span>
@@ -95,6 +99,13 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 600,
     color: '#fff',
+  },
+  thumb: {
+    width: '100%',
+    maxHeight: 180,
+    objectFit: 'cover',
+    borderRadius: 10,
+    border: '1px solid #eee',
   },
   noMatch: { textAlign: 'center', padding: '24px 0' },
   resetBtn: {
