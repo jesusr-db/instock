@@ -41,6 +41,21 @@ def _default_model_route() -> str:
     return "instockcv-gateway"  # placeholder; env var override expected
 
 
+def _default_yolo_endpoint() -> str:
+    """Read YOLO_ENDPOINT default from setup/yolo_endpoint_name.txt."""
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "setup" / "yolo_endpoint_name.txt",
+        Path("setup/yolo_endpoint_name.txt"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                return path.read_text().strip()
+            except OSError:
+                continue
+    return "instockcv-yolo"
+
+
 def _default_databricks_host() -> str:
     """Resolve DATABRICKS_HOST, ensuring it has https:// prefix.
 
@@ -69,6 +84,8 @@ class Settings(BaseSettings):
     image_volume_path: str
     sql_warehouse_http_path: str
     use_detection_stage: bool = False
+    yolo_endpoint: str = _default_yolo_endpoint()
+    yolo_confidence_threshold: float = 0.3
 
     model_config = SettingsConfigDict(
         env_file=".env",
