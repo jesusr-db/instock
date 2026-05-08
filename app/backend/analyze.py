@@ -78,7 +78,8 @@ async def analyze(
 
     Body: multipart/form-data with `file` (image) and optional `model_route`.
     Returns: scan_id, model_route, image_volume_path, brand, category,
-             product_name, size, flavor, top_3_sku_candidates.
+             product_name, size, flavor, top_3_sku_candidates,
+             detection_stage, detections (when stage ran successfully).
     """
     settings = get_settings()
     route = model_route or settings.model_route
@@ -92,8 +93,28 @@ async def analyze(
 
     volume_path = _save_image(image_bytes, ext, scan_id)
 
-    b64 = base64.b64encode(image_bytes).decode()
-    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    # Stage 1: YOLO detection (optional)
+    vlm_image_bytes = image_bytes
+    detection_stage = "disabled"
+    detections_meta: list[dict] | None = None
+
+    if settings.use_detection_stage:
+        from backend.detect import detect_products
+
+        crops = detect_products(image_bytes, settings)
+        if crops:
+            vlm_image_bytes = crops[0].image_bytes
+            detection_stage = "yolo"
+            detections_meta = [
+                {"crop_index": c.crop_index, "bbox": list(c.bbox), "confidence": c.confidence}
+                for c in crops
+            ]
+        else:
+            detection_stage = "fallback"
+
+    # Stage 2: VLM
+    b64 = base64.b64encode(vlm_image_bytes).decode()
+    mime = "image/jpeg"
 
     client = OpenAI(
         api_key=get_databricks_token(settings),
@@ -125,9 +146,13 @@ async def analyze(
     except ModelResponseError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    return {
+    result = {
         "scan_id": scan_id,
         "model_route": route,
         "image_volume_path": volume_path,
+        "detection_stage": detection_stage,
         **parsed,
     }
+    if detections_meta is not None:
+        result["detections"] = detections_meta
+    return result
