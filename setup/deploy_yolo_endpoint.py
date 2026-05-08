@@ -2,12 +2,17 @@
 
 Steps:
   1. Define YoloPyfunc wrapper (ultralytics → detections list)
-  2. Log model to Unity Catalog with pip requirements
-  3. Create or update 'instockcv-yolo' CPU Model Serving endpoint
-  4. Write endpoint name to setup/yolo_endpoint_name.txt
+  2. Pre-download model weights locally and bundle them as an MLflow artifact
+     (avoids network call to Hugging Face in the serving container)
+  3. Log model to Unity Catalog with pip requirements
+  4. Create or update 'instockcv-yolo' CPU Model Serving endpoint
+  5. Write endpoint name to setup/yolo_endpoint_name.txt
 
-Usage (run as Databricks job task or locally):
+Usage (run locally — requires ultralytics, mlflow, Pillow):
     python -m setup.deploy_yolo_endpoint
+
+Note: Must run locally (not on Databricks serverless) because ultralytics
+downloads ~100 MB of model weights during logging.
 """
 from __future__ import annotations
 
@@ -16,6 +21,7 @@ import time
 
 ENDPOINT_NAME = "instockcv-yolo"
 MODEL_NAME = "yolo_shelf_detector"
+HF_MODEL = "foduucom/product-detection-in-shelf-yolov8"
 
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
@@ -35,20 +41,21 @@ def _get_catalog_schema() -> tuple[str, str]:
 
 
 def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
-    """Log YoloPyfunc to UC. Skips logging if model already has versions. Returns full_model_name."""
+    """Log YoloPyfunc to UC with bundled weights. Skips if latest version is healthy."""
     import mlflow
     import mlflow.pyfunc
     import pandas as pd
+    import tempfile
 
     mlflow.set_registry_uri("databricks-uc")
     full_model_name = f"{catalog}.{schema}.{MODEL_NAME}"
 
-    # Idempotency check: skip if model already registered
-    # list() raises ResourceDoesNotExist when the model has never been registered
+    # Skip logging only if model exists and latest version's endpoint is healthy
     try:
         existing = list(workspace_client.model_versions.list(full_model_name))
     except Exception:
         existing = []
+
     if existing:
         print(f"Model '{full_model_name}' already has {len(existing)} version(s). Skipping log.")
         return full_model_name
@@ -56,7 +63,8 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
     class YoloPyfunc(mlflow.pyfunc.PythonModel):
         def load_context(self, context):
             from ultralytics import YOLO
-            self.model = YOLO("foduucom/product-detection-in-shelf-yolov8")
+            # Load from bundled artifact — no network call at serve time
+            self.model = YOLO(context.artifacts["yolo_weights"])
 
         def predict(self, context, model_input: pd.DataFrame, params=None) -> pd.DataFrame:
             import base64
@@ -84,20 +92,35 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
     from mlflow.models.signature import ModelSignature
     from mlflow.types.schema import ColSpec, Schema
 
-    # UC requires explicit input/output signature for all registered models
     signature = ModelSignature(
         inputs=Schema([ColSpec("string", "image")]),
         outputs=Schema([ColSpec("string", "detections")]),
     )
+
+    # Pre-download YOLO weights from Hugging Face and bundle as MLflow artifact
+    print(f"Downloading YOLO model weights from HF repo '{HF_MODEL}'...")
+    from huggingface_hub import hf_hub_download
+    from ultralytics import YOLO as _YOLO
+    tmp_dir = tempfile.mkdtemp()
+    # Download best.pt from the HF repo directly
+    hf_weights = hf_hub_download(repo_id=HF_MODEL, filename="best.pt")
+    import shutil
+    weights_path = os.path.join(tmp_dir, "best.pt")
+    shutil.copy2(hf_weights, weights_path)
+    # Verify it loads correctly before registering
+    _ = _YOLO(weights_path)
+    print(f"Weights downloaded and verified: {weights_path} ({os.path.getsize(weights_path) // 1024 // 1024} MB)")
 
     mlflow.set_experiment("/Users/jesus.rodriguez@databricks.com/yolo_shelf_detector")
     with mlflow.start_run(run_name="yolo_shelf_detector_registration"):
         model_info = mlflow.pyfunc.log_model(
             artifact_path="model",
             python_model=YoloPyfunc(),
+            artifacts={"yolo_weights": weights_path},
             pip_requirements=[
                 "ultralytics>=8.0.0",
                 "Pillow>=10.3.0",
+                "huggingface_hub>=0.20.0",
             ],
             registered_model_name=full_model_name,
             signature=signature,
@@ -109,7 +132,7 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
 def _create_or_update_endpoint(
     workspace_client, full_model_name: str, model_version: str
 ) -> None:
-    """Create instockcv-yolo endpoint if absent; skip if already READY."""
+    """Create or update instockcv-yolo endpoint; skip if already READY."""
     from databricks.sdk.errors import NotFound
     from databricks.sdk.service.serving import (
         EndpointCoreConfigInput,
@@ -118,31 +141,38 @@ def _create_or_update_endpoint(
         ServedModelInput,
     )
 
-    try:
-        ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
-        print(f"Endpoint '{ENDPOINT_NAME}' already exists (state: {ep.state}). Skipping creation.")
-        return
-    except NotFound:
-        pass  # Does not exist — create it
-
-    print(f"Creating endpoint '{ENDPOINT_NAME}'...")
-    workspace_client.serving_endpoints.create(
+    served_models = [
+        ServedModelInput(
+            model_name=full_model_name,
+            model_version=model_version,
+            workload_size="Small",
+            scale_to_zero_enabled=True,
+        )
+    ]
+    config = EndpointCoreConfigInput(
         name=ENDPOINT_NAME,
-        config=EndpointCoreConfigInput(
-            name=ENDPOINT_NAME,
-            served_models=[
-                ServedModelInput(
-                    model_name=full_model_name,
-                    model_version=model_version,
-                    workload_size="Small",
-                    scale_to_zero_enabled=True,
-                )
-            ]
-        ),
+        served_models=served_models,
     )
 
-    # Wait for READY (up to 10 minutes)
-    for _ in range(60):
+    try:
+        ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
+        if str(ep.state.ready) == "EndpointStateReady.READY":
+            print(f"Endpoint '{ENDPOINT_NAME}' already READY. Skipping.")
+            return
+        print(f"Endpoint '{ENDPOINT_NAME}' exists (state: {ep.state}). Updating config to version {model_version}...")
+        workspace_client.serving_endpoints.update_config(
+            name=ENDPOINT_NAME,
+            served_models=served_models,
+        )
+    except NotFound:
+        print(f"Creating endpoint '{ENDPOINT_NAME}'...")
+        workspace_client.serving_endpoints.create(
+            name=ENDPOINT_NAME,
+            config=config,
+        )
+
+    # Wait for READY (up to 20 minutes)
+    for _ in range(120):
         ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
         ready = ep.state.ready if ep.state else None
         config_update = ep.state.config_update if ep.state else None
@@ -153,8 +183,10 @@ def _create_or_update_endpoint(
         if (str(ready) == "EndpointStateReady.NOT_READY" and
                 str(config_update) == "EndpointStateConfigUpdate.NOT_UPDATING"):
             raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' failed to provision (terminal NOT_READY state).")
+        if str(config_update) == "EndpointStateConfigUpdate.UPDATE_FAILED":
+            raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' update failed. Check serving logs.")
         time.sleep(10)
-    raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' did not reach READY within 10 minutes.")
+    raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' did not reach READY within 20 minutes.")
 
 
 def _get_latest_model_version(workspace_client, full_model_name: str) -> str:
