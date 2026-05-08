@@ -44,7 +44,11 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
     full_model_name = f"{catalog}.{schema}.{MODEL_NAME}"
 
     # Idempotency check: skip if model already registered
-    existing = list(workspace_client.model_versions.list(full_model_name))
+    # list() raises ResourceDoesNotExist when the model has never been registered
+    try:
+        existing = list(workspace_client.model_versions.list(full_model_name))
+    except Exception:
+        existing = []
     if existing:
         print(f"Model '{full_model_name}' already has {len(existing)} version(s). Skipping log.")
         return full_model_name
@@ -77,6 +81,16 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
                 results.append({"detections": detections})
             return pd.DataFrame(results)
 
+    from mlflow.models.signature import ModelSignature
+    from mlflow.types.schema import ColSpec, Schema
+
+    # UC requires explicit input/output signature for all registered models
+    signature = ModelSignature(
+        inputs=Schema([ColSpec("string", "image")]),
+        outputs=Schema([ColSpec("string", "detections")]),
+    )
+
+    mlflow.set_experiment("/Users/jesus.rodriguez@databricks.com/yolo_shelf_detector")
     with mlflow.start_run(run_name="yolo_shelf_detector_registration"):
         model_info = mlflow.pyfunc.log_model(
             artifact_path="model",
@@ -86,6 +100,7 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
                 "Pillow>=10.3.0",
             ],
             registered_model_name=full_model_name,
+            signature=signature,
         )
     print(f"Model logged: {model_info.model_uri}")
     return full_model_name
@@ -101,7 +116,6 @@ def _create_or_update_endpoint(
         EndpointStateConfigUpdate,
         EndpointStateReady,
         ServedModelInput,
-        ServedModelInputWorkloadSize,
     )
 
     try:
@@ -115,11 +129,12 @@ def _create_or_update_endpoint(
     workspace_client.serving_endpoints.create(
         name=ENDPOINT_NAME,
         config=EndpointCoreConfigInput(
+            name=ENDPOINT_NAME,
             served_models=[
                 ServedModelInput(
                     model_name=full_model_name,
                     model_version=model_version,
-                    workload_size=ServedModelInputWorkloadSize.SMALL,
+                    workload_size="Small",
                     scale_to_zero_enabled=True,
                 )
             ]
