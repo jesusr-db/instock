@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.config import Config
 from PIL import Image
 
-from backend.config import Settings
+from backend.config import Settings, get_databricks_token
 
 
 @dataclass
@@ -25,7 +26,8 @@ def detect_products(image_bytes: bytes, settings: Settings) -> list[DetectedCrop
     Returns [] on any failure — callers fall back to full-image VLM path.
     """
     try:
-        w = WorkspaceClient()
+        token = get_databricks_token(settings)
+        w = WorkspaceClient(config=Config(host=settings.databricks_host, token=token))
         b64 = base64.b64encode(image_bytes).decode()
         response = w.serving_endpoints.query(
             name=settings.yolo_endpoint,
@@ -43,6 +45,11 @@ def detect_products(image_bytes: bytes, settings: Settings) -> list[DetectedCrop
             return []
 
         raw_detections.sort(key=lambda d: d["confidence"], reverse=True)
+
+        # Filter below confidence threshold before cropping
+        raw_detections = [d for d in raw_detections if d["confidence"] >= settings.yolo_confidence_threshold]
+        if not raw_detections:
+            return []
 
         img = Image.open(BytesIO(image_bytes))
         crops: list[DetectedCrop] = []

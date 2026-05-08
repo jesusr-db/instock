@@ -1,12 +1,9 @@
 """Unit tests for app.backend.detect."""
-import base64
 import os
 import sys
-from dataclasses import dataclass
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
-import pytest
 from PIL import Image
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
@@ -117,3 +114,20 @@ def test_detected_crop_dataclass_fields():
     assert crop.bbox == (10, 20, 100, 200)
     assert crop.confidence == 0.88
     assert crop.image_bytes == b"fake"
+
+
+def test_detect_products_filters_below_threshold():
+    settings = get_settings()
+    image_bytes = _make_test_image(200, 200)
+
+    raw = [
+        {"bbox": [10, 10, 50, 50], "confidence": 0.15, "class": "product"},
+        {"bbox": [60, 60, 120, 120], "confidence": 0.05, "class": "product"},
+    ]
+
+    with patch("backend.detect.WorkspaceClient") as MockWC:
+        MockWC.return_value.serving_endpoints.query.return_value = _mock_query_response(raw)
+        crops = detect_products(image_bytes, settings)
+
+    # Default threshold is 0.3; both detections are below it
+    assert crops == []
