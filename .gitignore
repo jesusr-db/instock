@@ -27,3 +27,8 @@ Thumbs.db
 
 # Databricks
 .databricks/
+
+# Living docs / agent artifacts
+CLAUDE.md
+docs/
+.agent-team/
