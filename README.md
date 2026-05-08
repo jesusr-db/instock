@@ -12,7 +12,7 @@ The backend runs FastAPI on Databricks Apps with OAuth m2m auth. The frontend is
 
 ## How it works
 
-1. Employee opens the app on their phone and photographs a product
+1. Employee opens the app and uploads photographs a product
 2. `POST /analyze` sends the image to an AI Gateway vision endpoint, which returns structured JSON with brand, product name, size, and top SKU candidates
 3. `POST /lookup` fuzzy-matches candidates against the live `inventory` Delta table and returns the quantity on hand
 4. The result card shows product info, SKU, quantity, and match confidence
@@ -23,7 +23,7 @@ The backend runs FastAPI on Databricks Apps with OAuth m2m auth. The frontend is
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Mobile Browser (phone camera)                                  │
+│  Browser (upload or camera                              │
 │  React SPA — Vite build, served as static files from FastAPI    │
 │  ScanPanel → photo capture / file select                        │
 │  ResultCard → product name, brand, size, SKU, qty, confidence   │
