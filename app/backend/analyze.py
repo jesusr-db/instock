@@ -114,7 +114,9 @@ async def analyze(
 
     # Stage 2: VLM
     b64 = base64.b64encode(vlm_image_bytes).decode()
-    mime = "image/jpeg"
+    mime = "image/jpeg" if vlm_image_bytes is not image_bytes else (
+        "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    )
 
     client = OpenAI(
         api_key=get_databricks_token(settings),

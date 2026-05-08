@@ -6,9 +6,11 @@ Validates:
 - parse_model_response strips markdown code fences
 - parse_model_response raises ModelResponseError on garbage input
 """
+import base64 as b64_mod
 import json
 import os
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -32,6 +34,7 @@ from backend.analyze import (  # noqa: E402
     build_vision_prompt,
     parse_model_response,
 )
+from backend.detect import DetectedCrop  # noqa: E402
 
 
 def test_build_vision_prompt_contains_required_keys():
@@ -81,11 +84,6 @@ def test_parse_strips_markdown_fences():
 def test_parse_raises_on_garbage():
     with pytest.raises(ModelResponseError):
         parse_model_response("not json at all {{{")
-
-
-from unittest.mock import MagicMock, patch
-
-from backend.detect import DetectedCrop
 
 
 def _make_jpeg_bytes(width: int = 50, height: int = 50) -> bytes:
@@ -154,6 +152,9 @@ def test_analyze_detection_stage_uses_crop_when_yolo_succeeds(monkeypatch):
     assert len(data["detections"]) == 1
     assert data["detections"][0]["confidence"] == 0.88
     assert data["detections"][0]["crop_index"] == 0
+    assert "url" in captured_b64
+    actual_b64 = captured_b64["url"].split(",", 1)[1]
+    assert b64_mod.b64decode(actual_b64) == crop_bytes
 
 
 def test_analyze_detection_stage_falls_back_when_yolo_returns_empty(monkeypatch):
