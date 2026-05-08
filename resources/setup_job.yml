@@ -9,7 +9,21 @@ resources:
             python_file: ../setup/create_endpoint.py
           environment_key: default
 
+        - task_key: deploy_yolo_endpoint
+          depends_on:
+            - task_key: create_endpoint
+          spark_python_task:
+            python_file: ../setup/deploy_yolo_endpoint.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+          environment_key: yolo
+
         - task_key: provision_tables
+          depends_on:
+            - task_key: deploy_yolo_endpoint
           spark_python_task:
             python_file: ../setup/create_tables.py
             parameters:
@@ -25,3 +39,12 @@ resources:
             client: "1"
             dependencies:
               - "databricks-sdk>=0.28.0"
+
+        - environment_key: yolo
+          spec:
+            client: "1"
+            dependencies:
+              - "databricks-sdk>=0.28.0"
+              - "ultralytics>=8.0.0"
+              - "mlflow>=2.10.0"
+              - "Pillow>=10.3.0"

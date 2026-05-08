@@ -23,6 +23,12 @@ variables:
   sql_warehouse_http_path:
     description: HTTP path for the SQL warehouse used by the app
     default: /sql/1.0/warehouses/5067b513037fbf07
+  use_detection_stage:
+    description: "Enable YOLO two-stage detection in /analyze"
+    default: "false"
+  yolo_confidence_threshold:
+    description: "Minimum YOLO detection confidence to use crop instead of full image"
+    default: "0.3"
 
 targets:
   dev:
