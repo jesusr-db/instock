@@ -37,17 +37,36 @@ def score_to_label(score: float) -> ConfidenceLabel:
     return ConfidenceLabel.LOW
 
 
+def _size_score(candidate_str: str, extracted_size: Optional[str], row_size: str) -> float:
+    """Score size match using both the candidate string and the VLM-extracted size field.
+
+    The VLM extracts size as a structured field ("12oz", "single", "6pk", etc.).
+    Comparing that directly against the inventory size avoids the pack-count
+    confusion that arises when size tokens are diluted in a full-string comparison.
+    """
+    # Direct comparison: extracted size vs inventory size (high precision)
+    direct = fuzz.token_set_ratio(extracted_size or "", row_size) / 100.0 if extracted_size else 0.0
+    # Fallback: size token presence in candidate string
+    indirect = fuzz.partial_ratio(candidate_str, row_size) / 100.0
+    return max(direct, indirect)
+
+
 def fuzzy_match_candidates(
     candidates: list[dict],
     inventory: list[dict],
+    extracted_size: Optional[str] = None,
     min_score: float = 0.50,
 ) -> Optional[dict]:
     """Return the best inventory row matching any candidate, or None.
 
-    For each (candidate, inventory_row) pair, computes
-        combined = (rapidfuzz.token_sort_ratio / 100) * candidate.confidence_score
-    and returns the row with the highest combined score, provided its
-    raw fuzzy score (before confidence weighting) is at least min_score.
+    Scoring (per candidate × inventory row pair):
+      - name_score:  token_sort_ratio on full "{brand} {product} {size}" string (60%)
+      - size_score:  dedicated size field comparison using VLM-extracted size (40%)
+      → fuzzy = 0.6 * name_score + 0.4 * size_score
+      → combined = fuzzy * candidate.confidence_score
+
+    Separating size into its own component prevents pack-count tokens ("24pk",
+    "single") from being swamped by brand/product tokens during full-string matching.
     """
     best_combined = 0.0
     best_row: Optional[dict] = None
@@ -56,7 +75,9 @@ def fuzzy_match_candidates(
         conf = float(candidate.get("confidence_score", 1.0))
         for row in inventory:
             row_str = f"{row['brand']} {row['product_name']} {row['size']}"
-            fuzzy = fuzz.token_sort_ratio(cname, row_str) / 100.0
+            name_score = fuzz.token_sort_ratio(cname, row_str) / 100.0
+            sz = _size_score(cname, extracted_size, row.get("size", ""))
+            fuzzy = 0.6 * name_score + 0.4 * sz
             combined = fuzzy * conf
             if combined > best_combined:
                 best_combined = combined
@@ -131,7 +152,7 @@ async def lookup(req: LookupRequest, background_tasks: BackgroundTasks):
     except Exception as e:  # noqa: BLE001 — surface DB errors as 502
         raise HTTPException(status_code=502, detail=f"Database error: {e}") from e
 
-    match = fuzzy_match_candidates(req.top_3_sku_candidates, inventory)
+    match = fuzzy_match_candidates(req.top_3_sku_candidates, inventory, extracted_size=req.size)
 
     matched = match is not None
     result = {
