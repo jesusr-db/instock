@@ -1,53 +1,79 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import ScanPanel from './ScanPanel'
 import ResultCard from './ResultCard'
 import { analyzeImage, lookupSku, fetchModels } from './api'
-import type { LookupResult } from './api'
+import type { AnalyzeResult, LookupResult } from './api'
 
-type State = 'idle' | 'loading' | 'result' | 'error'
+type AppState = 'idle' | 'loading' | 'result' | 'error'
+type LoadingStep = 'uploading' | 'detecting' | 'analyzing' | 'lookup'
+
+const STEPS: { key: LoadingStep; label: string }[] = [
+  { key: 'uploading',  label: 'Sending image' },
+  { key: 'detecting',  label: 'Detecting products (YOLO)' },
+  { key: 'analyzing',  label: 'AI vision analysis' },
+  { key: 'lookup',     label: 'Inventory lookup' },
+]
+
+const STEP_ORDER: LoadingStep[] = ['uploading', 'detecting', 'analyzing', 'lookup']
 
 const FALLBACK_MODEL = 'instockcv-gateway'
 
 export default function App() {
-  const [state, setState] = useState<State>('idle')
-  const [result, setResult] = useState<LookupResult | null>(null)
-  const [imageUrl, setImageUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [models, setModels] = useState<string[]>([FALLBACK_MODEL])
+  const [appState, setAppState]       = useState<AppState>('idle')
+  const [loadingStep, setLoadingStep] = useState<LoadingStep>('uploading')
+  const [result, setResult]           = useState<LookupResult | null>(null)
+  const [analyzed, setAnalyzed]       = useState<AnalyzeResult | null>(null)
+  const [imageUrl, setImageUrl]       = useState<string | null>(null)
+  const [error, setError]             = useState<string | null>(null)
+  const [models, setModels]           = useState<string[]>([FALLBACK_MODEL])
   const [selectedModel, setSelectedModel] = useState<string>(FALLBACK_MODEL)
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
     fetchModels()
-      .then((cfg) => {
-        setModels(cfg.models)
-        setSelectedModel(cfg.default)
-      })
-      .catch(() => {
-        // Network or server error — keep fallback model.
-      })
+      .then((cfg) => { setModels(cfg.models); setSelectedModel(cfg.default) })
+      .catch(() => {})
   }, [])
 
+  function clearTimers() {
+    timers.current.forEach(clearTimeout)
+    timers.current = []
+  }
+
   async function handleSubmit(file: File) {
-    setState('loading')
+    setAppState('loading')
+    setLoadingStep('uploading')
     setError(null)
     setImageUrl(URL.createObjectURL(file))
+    clearTimers()
+
+    // Advance steps on a rough timeline matching backend processing time
+    timers.current.push(setTimeout(() => setLoadingStep('detecting'), 1500))
+    timers.current.push(setTimeout(() => setLoadingStep('analyzing'), 5000))
+
     try {
-      const analyzed = await analyzeImage(file, selectedModel)
-      const looked = await lookupSku(analyzed)
-      setResult(looked)
-      setState('result')
+      const analyzeResult = await analyzeImage(file, selectedModel)
+      clearTimers()
+      setAnalyzed(analyzeResult)
+      setLoadingStep('lookup')
+      const lookupResult = await lookupSku(analyzeResult)
+      setResult(lookupResult)
+      setAppState('result')
     } catch (e) {
+      clearTimers()
       setError(e instanceof Error ? e.message : 'Unexpected error')
-      setState('error')
+      setAppState('error')
     }
   }
 
   function reset() {
+    clearTimers()
     if (imageUrl) URL.revokeObjectURL(imageUrl)
     setResult(null)
+    setAnalyzed(null)
     setImageUrl(null)
     setError(null)
-    setState('idle')
+    setAppState('idle')
   }
 
   return (
@@ -57,20 +83,44 @@ export default function App() {
         <h1 style={s.title}>inStockCV</h1>
       </header>
       <main style={s.main}>
-        {(state === 'idle' || state === 'loading' || state === 'error') && (
+        {(appState === 'idle' || appState === 'loading' || appState === 'error') && (
           <ScanPanel
             onSubmit={handleSubmit}
-            isLoading={state === 'loading'}
+            isLoading={appState === 'loading'}
             models={models}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
           />
         )}
-        {state === 'error' && error && <div style={s.errorBanner}>{error}</div>}
-        {state === 'result' && result && (
-          <ResultCard result={result} imageUrl={imageUrl} onReset={reset} />
+        {appState === 'loading' && <LoadingSteps current={loadingStep} />}
+        {appState === 'error' && error && <div style={s.errorBanner}>{error}</div>}
+        {appState === 'result' && result && analyzed && (
+          <ResultCard result={result} analyzeResult={analyzed} imageUrl={imageUrl} onReset={reset} />
         )}
       </main>
+    </div>
+  )
+}
+
+function LoadingSteps({ current }: { current: LoadingStep }) {
+  const currentIdx = STEP_ORDER.indexOf(current)
+  return (
+    <div style={ls.wrap}>
+      {STEPS.map(({ key, label }, i) => {
+        const done   = i < currentIdx
+        const active = i === currentIdx
+        return (
+          <div key={key} style={ls.row}>
+            <span style={{ ...ls.dot, ...(done ? ls.dotDone : active ? ls.dotActive : ls.dotPending) }}>
+              {done ? '✓' : active ? '◉' : '○'}
+            </span>
+            <span style={{ ...ls.label, color: done ? '#6b7280' : active ? '#111' : '#9ca3af' }}>
+              {label}
+              {active && <span style={ls.pulse}>…</span>}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -96,4 +146,24 @@ const s: Record<string, React.CSSProperties> = {
     marginTop: 12,
     fontSize: 14,
   },
+}
+
+const ls: Record<string, React.CSSProperties> = {
+  wrap: {
+    background: '#fff',
+    border: '1px solid #e5e7eb',
+    borderRadius: 12,
+    padding: '16px 20px',
+    marginTop: 16,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  row: { display: 'flex', alignItems: 'center', gap: 10 },
+  dot: { fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 },
+  dotDone:    { color: '#16a34a' },
+  dotActive:  { color: '#1B3A6B' },
+  dotPending: { color: '#d1d5db' },
+  label: { fontSize: 14, fontWeight: 500 },
+  pulse: { opacity: 0.5 },
 }

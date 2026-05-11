@@ -12,10 +12,18 @@ export interface SkuCandidate {
   confidence_score: number
 }
 
+export interface Detection {
+  crop_index: number
+  bbox: [number, number, number, number]
+  confidence: number
+}
+
 export interface AnalyzeResult {
   scan_id: string
   model_route: string
   image_volume_path: string | null
+  detection_stage: 'yolo' | 'fallback' | 'disabled'
+  detections?: Detection[]
   brand: string | null
   category: string | null
   product_name: string | null
