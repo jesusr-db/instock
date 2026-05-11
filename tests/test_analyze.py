@@ -205,3 +205,68 @@ def test_analyze_detection_stage_disabled_by_default(monkeypatch):
     data = resp.json()
     assert data["detection_stage"] == "disabled"
     assert "detections" not in data
+
+
+def test_analyze_user_crop_sets_detection_stage(monkeypatch):
+    """When crop coords provided, detection_stage='user-crop' and YOLO is not called."""
+    from backend import config as config_module
+
+    config_module.get_settings.cache_clear()
+    monkeypatch.setenv("USE_DETECTION_STAGE", "true")
+    monkeypatch.setenv("YOLO_ENDPOINT", "instockcv-yolo")
+
+    image_bytes = _make_jpeg_bytes(100, 100)
+
+    with patch("backend.detect.detect_products") as mock_yolo, \
+         patch("backend.analyze.OpenAI") as MockOpenAI:
+        MockOpenAI.return_value.chat.completions.create.return_value = _mock_vlm_response()
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        client = TestClient(app)
+        resp = client.post(
+            "/analyze",
+            files={"file": ("test.jpg", image_bytes, "image/jpeg")},
+            data={"crop_x1": "10", "crop_y1": "10", "crop_x2": "60", "crop_y2": "60"},
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["detection_stage"] == "user-crop"
+    mock_yolo.assert_not_called()
+
+
+def test_analyze_user_crop_sends_smaller_image_to_vlm():
+    """When crop coords provided, VLM receives a smaller image than the original."""
+    import base64 as b64_mod
+    from io import BytesIO
+    from PIL import Image
+    from backend import config as config_module
+
+    config_module.get_settings.cache_clear()
+
+    image_bytes = _make_jpeg_bytes(200, 200)
+    captured: dict = {}
+
+    def fake_create(**kwargs):
+        msgs = kwargs.get("messages", [])
+        for part in msgs[0]["content"]:
+            if part.get("type") == "image_url":
+                captured["url"] = part["image_url"]["url"]
+        return _mock_vlm_response()
+
+    with patch("backend.analyze.OpenAI") as MockOpenAI:
+        MockOpenAI.return_value.chat.completions.create.side_effect = fake_create
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        client = TestClient(app)
+        resp = client.post(
+            "/analyze",
+            files={"file": ("test.jpg", image_bytes, "image/jpeg")},
+            data={"crop_x1": "0", "crop_y1": "0", "crop_x2": "50", "crop_y2": "50"},
+        )
+
+    assert resp.status_code == 200
+    assert "url" in captured
+    raw_b64 = captured["url"].split(",", 1)[1]
+    crop_img = Image.open(BytesIO(b64_mod.b64decode(raw_b64)))
+    assert crop_img.size == (50, 50), f"Expected 50x50 crop, got {crop_img.size}"

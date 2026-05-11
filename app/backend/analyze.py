@@ -14,6 +14,7 @@ import json
 import os
 import re
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from openai import OpenAI
@@ -80,13 +81,19 @@ def _save_image(image_bytes: bytes, ext: str, scan_id: str) -> str | None:
 async def analyze(
     file: UploadFile = File(...),
     model_route: str = Form(default=None),
+    crop_x1: Optional[int] = Form(default=None),
+    crop_y1: Optional[int] = Form(default=None),
+    crop_x2: Optional[int] = Form(default=None),
+    crop_y2: Optional[int] = Form(default=None),
 ):
     """Vision inference endpoint.
 
-    Body: multipart/form-data with `file` (image) and optional `model_route`.
+    Body: multipart/form-data with `file` (image), optional `model_route`,
+    and optional `crop_x1/y1/x2/y2` pixel coords (original image space).
+
     Returns: scan_id, model_route, image_volume_path, brand, category,
              product_name, size, flavor, top_3_sku_candidates,
-             detection_stage, detections (when stage ran successfully).
+             detection_stage, detections (when yolo stage ran).
     """
     settings = get_settings()
     route = model_route or settings.model_route
@@ -100,12 +107,31 @@ async def analyze(
 
     volume_path = _save_image(image_bytes, ext, scan_id)
 
-    # Stage 1: YOLO detection (optional)
     vlm_image_bytes = image_bytes
     detection_stage = "disabled"
     detections_meta: list[dict] | None = None
 
-    if settings.use_detection_stage:
+    user_crop_provided = all(v is not None for v in (crop_x1, crop_y1, crop_x2, crop_y2))
+
+    if user_crop_provided:
+        from io import BytesIO as _BytesIO
+
+        from PIL import Image as _Image
+
+        img = _Image.open(_BytesIO(image_bytes))
+        w_img, h_img = img.size
+        x1 = max(0, min(int(crop_x1), w_img))  # type: ignore[arg-type]
+        y1 = max(0, min(int(crop_y1), h_img))  # type: ignore[arg-type]
+        x2 = max(0, min(int(crop_x2), w_img))  # type: ignore[arg-type]
+        y2 = max(0, min(int(crop_y2), h_img))  # type: ignore[arg-type]
+        if x2 > x1 and y2 > y1:
+            crop_img = img.crop((x1, y1, x2, y2))
+            buf = _BytesIO()
+            crop_img.save(buf, format="JPEG")
+            vlm_image_bytes = buf.getvalue()
+        detection_stage = "user-crop"
+
+    elif settings.use_detection_stage:
         from backend.detect import detect_products
 
         crops = detect_products(image_bytes, settings)
@@ -119,7 +145,6 @@ async def analyze(
         else:
             detection_stage = "fallback"
 
-    # Stage 2: VLM
     b64 = base64.b64encode(vlm_image_bytes).decode()
     mime = "image/jpeg" if vlm_image_bytes is not image_bytes else (
         "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
