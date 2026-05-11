@@ -38,18 +38,11 @@ def health() -> dict:
 async def debug_detect(file: UploadFile = File(...)) -> dict:
     """Temporary: test YOLO raw response from app context. Remove after debugging."""
     import base64, time, traceback
-    from backend.config import get_databricks_token
     settings = get_settings()
     image_bytes = await file.read()
     try:
         from databricks.sdk import WorkspaceClient
-        from databricks.sdk.config import Config
-        token = get_databricks_token(settings)
-        w = WorkspaceClient(config=Config(
-            host=settings.databricks_host,
-            token=token,
-            http_timeout_seconds=300,
-        ))
+        w = WorkspaceClient(host=settings.databricks_host, http_timeout_seconds=300)
         b64 = base64.b64encode(image_bytes).decode()
         t0 = time.time()
         response = w.serving_endpoints.query(

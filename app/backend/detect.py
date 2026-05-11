@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from databricks.sdk import WorkspaceClient
-from databricks.sdk.config import Config
 from PIL import Image
 
-from backend.config import Settings, get_databricks_token
+from backend.config import Settings
 
 log = logging.getLogger(__name__)
 
@@ -31,12 +30,11 @@ def detect_products(image_bytes: bytes, settings: Settings) -> list[DetectedCrop
     has scaled to zero.
     """
     try:
-        token = get_databricks_token(settings)
-        w = WorkspaceClient(config=Config(
-            host=settings.databricks_host,
-            token=token,
-            http_timeout_seconds=300,  # survive cold-start from scale-to-zero
-        ))
+        # Let the SDK resolve auth from its ambient environment (OAuth m2m in
+        # Databricks Apps, CLI profile locally).  Passing an explicit token
+        # alongside DATABRICKS_CLIENT_ID/SECRET causes "multiple auth methods"
+        # ValueError inside the app.
+        w = WorkspaceClient(host=settings.databricks_host, http_timeout_seconds=300)
         b64 = base64.b64encode(image_bytes).decode()
         response = w.serving_endpoints.query(
             name=settings.yolo_endpoint,
