@@ -103,7 +103,7 @@ w = WorkspaceClient(config=Config(host=settings.databricks_host, http_timeout_se
 
 ## Open Issue: Singles vs. Bundle Pack Confusion
 
-**Status: Not resolved**
+**Status: RESOLVED** — Options A + B implemented (see commit on `feat/yolo-two-stage-pipeline`)
 
 **Symptom:** A shelf of individual Dr Pepper 20oz bottles is matched to SKU `BEV-DRPE-ORIG-200Z-24PK` (24-pack case) instead of the 1-count single.
 

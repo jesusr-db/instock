@@ -42,7 +42,12 @@ def build_vision_prompt() -> str:
         "category must be one of: tobacco, beverage, snack. "
         "IMPORTANT: Only identify a product if you can clearly read the brand name from the image. "
         "If the image is too small, blurry, or the label is not legible, return brand=null "
-        "and an empty top_3_sku_candidates array. Do NOT guess a brand you cannot see."
+        "and an empty top_3_sku_candidates array. Do NOT guess a brand you cannot see. "
+        "For the size field and every candidate_name, always specify pack count: "
+        "add '1ct' or 'single' for individual units (one bottle, one can, one bag); "
+        "add the count (e.g., '24pk', '6pk', '12pk') for multipacks or cases. "
+        "If uncertain, default to '1ct'. "
+        "Example: '20oz 1ct' for a single bottle, '20oz 24pk' for a case of 24."
     )
 
 

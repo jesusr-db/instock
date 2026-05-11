@@ -41,22 +41,49 @@ def fuzzy_match_candidates(
     candidates: list[dict],
     inventory: list[dict],
     min_score: float = 0.50,
+    req_brand: str | None = None,
+    req_size: str | None = None,
 ) -> Optional[dict]:
     """Return the best inventory row matching any candidate, or None.
 
-    For each (candidate, inventory_row) pair, computes
-        combined = (rapidfuzz.token_sort_ratio / 100) * candidate.confidence_score
-    and returns the row with the highest combined score, provided its
-    raw fuzzy score (before confidence weighting) is at least min_score.
+    Scoring:
+      - base = token_sort_ratio(candidate_name, "<brand> <product> <size>") / 100
+      - When req_brand passes the brand gate (token_set_ratio >= 0.70) AND
+        req_size is provided, fuzzy = 0.60 * base + 0.40 * size_score.
+        This distinguishes singles from multipacks within the correct brand.
+      - Otherwise fuzzy = base (unchanged behavior). This prevents size weight
+        from amplifying cross-brand hallucinations.
+      - combined = fuzzy * candidate.confidence_score.
     """
+    BRAND_GATE = 0.70
+    FULL_WEIGHT = 0.60
+    SIZE_WEIGHT = 0.40
+
     best_combined = 0.0
     best_row: Optional[dict] = None
+    brand_gate_cache: dict[str, bool] = {}
+
+    def _brand_passes(row_brand: str) -> bool:
+        if not req_brand or not row_brand:
+            return False
+        if row_brand not in brand_gate_cache:
+            ok = fuzz.token_set_ratio(req_brand, row_brand) / 100.0 >= BRAND_GATE
+            brand_gate_cache[row_brand] = ok
+        return brand_gate_cache[row_brand]
+
     for candidate in candidates:
         cname = candidate.get("candidate_name", "") or ""
         conf = float(candidate.get("confidence_score", 1.0))
         for row in inventory:
-            row_str = f"{row['brand']} {row['product_name']} {row['size']}"
-            fuzzy = fuzz.token_sort_ratio(cname, row_str) / 100.0
+            row_brand = row.get("brand") or ""
+            row_size = row.get("size") or ""
+            row_str = f"{row_brand} {row.get('product_name', '')} {row_size}"
+            base = fuzz.token_sort_ratio(cname, row_str) / 100.0
+            if req_size and _brand_passes(row_brand):
+                size_score = fuzz.token_set_ratio(req_size, row_size) / 100.0
+                fuzzy = FULL_WEIGHT * base + SIZE_WEIGHT * size_score
+            else:
+                fuzzy = base
             combined = fuzzy * conf
             if combined > best_combined:
                 best_combined = combined
@@ -131,7 +158,12 @@ async def lookup(req: LookupRequest, background_tasks: BackgroundTasks):
     except Exception as e:  # noqa: BLE001 — surface DB errors as 502
         raise HTTPException(status_code=502, detail=f"Database error: {e}") from e
 
-    match = fuzzy_match_candidates(req.top_3_sku_candidates, inventory)
+    match = fuzzy_match_candidates(
+        req.top_3_sku_candidates,
+        inventory,
+        req_brand=req.brand,
+        req_size=req.size,
+    )
 
     matched = match is not None
     result = {
