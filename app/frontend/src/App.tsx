@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import ScanPanel from './ScanPanel'
+import CropSelector from './CropSelector'
 import ResultCard from './ResultCard'
-import { analyzeImage, lookupSku, fetchModels } from './api'
-import type { AnalyzeResult, LookupResult } from './api'
+import ScanPanel from './ScanPanel'
+import { analyzeImage, detectCrops, fetchModels, lookupSku } from './api'
+import type { AnalyzeResult, DetectCrop, LookupResult } from './api'
 
-type AppState = 'idle' | 'loading' | 'result' | 'error'
+type AppState = 'idle' | 'detecting' | 'crop-select' | 'analyzing' | 'result' | 'error'
 type LoadingStep = 'uploading' | 'detecting' | 'analyzing' | 'lookup'
 
 const STEPS: { key: LoadingStep; label: string }[] = [
@@ -19,14 +20,16 @@ const STEP_ORDER: LoadingStep[] = ['uploading', 'detecting', 'analyzing', 'looku
 const FALLBACK_MODEL = 'instockcv-gateway'
 
 export default function App() {
-  const [appState, setAppState]       = useState<AppState>('idle')
-  const [loadingStep, setLoadingStep] = useState<LoadingStep>('uploading')
-  const [result, setResult]           = useState<LookupResult | null>(null)
-  const [analyzed, setAnalyzed]       = useState<AnalyzeResult | null>(null)
-  const [imageUrl, setImageUrl]       = useState<string | null>(null)
-  const [error, setError]             = useState<string | null>(null)
-  const [models, setModels]           = useState<string[]>([FALLBACK_MODEL])
-  const [selectedModel, setSelectedModel] = useState<string>(FALLBACK_MODEL)
+  const [appState, setAppState]               = useState<AppState>('idle')
+  const [loadingStep, setLoadingStep]         = useState<LoadingStep>('uploading')
+  const [result, setResult]                   = useState<LookupResult | null>(null)
+  const [analyzed, setAnalyzed]               = useState<AnalyzeResult | null>(null)
+  const [imageUrl, setImageUrl]               = useState<string | null>(null)
+  const [currentFile, setCurrentFile]         = useState<File | null>(null)
+  const [detectedCrops, setDetectedCrops]     = useState<DetectCrop[]>([])
+  const [error, setError]                     = useState<string | null>(null)
+  const [models, setModels]                   = useState<string[]>([FALLBACK_MODEL])
+  const [selectedModel, setSelectedModel]     = useState<string>(FALLBACK_MODEL)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
@@ -41,26 +44,42 @@ export default function App() {
   }
 
   async function handleSubmit(file: File) {
-    setAppState('loading')
+    setAppState('detecting')
     setLoadingStep('uploading')
     setError(null)
     setImageUrl(URL.createObjectURL(file))
+    setCurrentFile(file)
     clearTimers()
-
-    // Advance steps on a rough timeline matching backend processing time
-    timers.current.push(setTimeout(() => setLoadingStep('detecting'), 1500))
-    timers.current.push(setTimeout(() => setLoadingStep('analyzing'), 5000))
+    timers.current.push(setTimeout(() => setLoadingStep('detecting'), 800))
 
     try {
-      const analyzeResult = await analyzeImage(file, selectedModel)
+      const detectResult = await detectCrops(file)
       clearTimers()
+      setDetectedCrops(detectResult.crops)
+      setAppState('crop-select')
+    } catch (e) {
+      clearTimers()
+      setError(e instanceof Error ? e.message : 'Unexpected error')
+      setAppState('error')
+    }
+  }
+
+  async function handleCropConfirm(coords: [number, number, number, number] | null) {
+    setAppState('analyzing')
+    setLoadingStep('analyzing')
+
+    try {
+      const analyzeResult = await analyzeImage(
+        currentFile!,
+        selectedModel,
+        coords ?? undefined
+      )
       setAnalyzed(analyzeResult)
       setLoadingStep('lookup')
       const lookupResult = await lookupSku(analyzeResult)
       setResult(lookupResult)
       setAppState('result')
     } catch (e) {
-      clearTimers()
       setError(e instanceof Error ? e.message : 'Unexpected error')
       setAppState('error')
     }
@@ -72,6 +91,8 @@ export default function App() {
     setResult(null)
     setAnalyzed(null)
     setImageUrl(null)
+    setCurrentFile(null)
+    setDetectedCrops([])
     setError(null)
     setAppState('idle')
   }
@@ -83,16 +104,25 @@ export default function App() {
         <h1 style={s.title}>inStockCV</h1>
       </header>
       <main style={s.main}>
-        {(appState === 'idle' || appState === 'loading' || appState === 'error') && (
+        {(appState === 'idle' || appState === 'detecting' || appState === 'error') && (
           <ScanPanel
             onSubmit={handleSubmit}
-            isLoading={appState === 'loading'}
+            isLoading={appState === 'detecting'}
             models={models}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
           />
         )}
-        {appState === 'loading' && <LoadingSteps current={loadingStep} />}
+        {(appState === 'detecting' || appState === 'analyzing') && (
+          <LoadingSteps current={loadingStep} />
+        )}
+        {appState === 'crop-select' && currentFile && (
+          <CropSelector
+            imageFile={currentFile}
+            crops={detectedCrops}
+            onConfirm={handleCropConfirm}
+          />
+        )}
         {appState === 'error' && error && <div style={s.errorBanner}>{error}</div>}
         {appState === 'result' && result && analyzed && (
           <ResultCard result={result} analyzeResult={analyzed} imageUrl={imageUrl} onReset={reset} />
