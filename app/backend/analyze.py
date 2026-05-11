@@ -85,6 +85,7 @@ async def analyze(
     crop_y1: Optional[int] = Form(default=None),
     crop_x2: Optional[int] = Form(default=None),
     crop_y2: Optional[int] = Form(default=None),
+    crop_source: Optional[str] = Form(default=None),
 ):
     """Vision inference endpoint.
 
@@ -129,7 +130,7 @@ async def analyze(
             buf = _BytesIO()
             crop_img.save(buf, format="JPEG")
             vlm_image_bytes = buf.getvalue()
-            detection_stage = "user-crop"
+            detection_stage = crop_source if crop_source in ("yolo", "user-crop") else "user-crop"
         else:
             detection_stage = "fallback"
 

@@ -4,7 +4,7 @@ import type { DetectCrop } from './api'
 interface CropSelectorProps {
   imageFile: File
   crops: DetectCrop[]
-  onConfirm: (coords: [number, number, number, number] | null) => void
+  onConfirm: (coords: [number, number, number, number] | null, cropSource?: 'yolo' | 'user-crop') => void
 }
 
 export default function CropSelector({ imageFile, crops, onConfirm }: CropSelectorProps) {
@@ -79,10 +79,10 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
 
   function handleConfirm() {
     if (drawnBox) {
-      onConfirm(drawnBox)
+      onConfirm(drawnBox, 'user-crop')
     } else if (selectedYolo !== null) {
       const crop = crops[selectedYolo]
-      onConfirm([crop.bbox[0], crop.bbox[1], crop.bbox[2], crop.bbox[3]])
+      onConfirm([crop.bbox[0], crop.bbox[1], crop.bbox[2], crop.bbox[3]], 'yolo')
     }
   }
 

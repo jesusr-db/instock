@@ -65,7 +65,7 @@ export default function App() {
     setAppState('crop-select')
   }
 
-  async function handleCropConfirm(coords: [number, number, number, number] | null) {
+  async function handleCropConfirm(coords: [number, number, number, number] | null, cropSource?: 'yolo' | 'user-crop') {
     clearTimers()
     setAppState('analyzing')
     setLoadingStep('analyzing')
@@ -74,7 +74,8 @@ export default function App() {
       const analyzeResult = await analyzeImage(
         currentFile!,
         selectedModel,
-        coords ?? undefined
+        coords ?? undefined,
+        cropSource
       )
       setAnalyzed(analyzeResult)
       setLoadingStep('lookup')

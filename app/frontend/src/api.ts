@@ -83,7 +83,8 @@ export async function detectCrops(file: File): Promise<DetectResult> {
 export async function analyzeImage(
   file: File,
   modelRoute: string,
-  cropCoords?: [number, number, number, number]
+  cropCoords?: [number, number, number, number],
+  cropSource?: 'yolo' | 'user-crop'
 ): Promise<AnalyzeResult> {
   const form = new FormData()
   form.append('file', file)
@@ -93,6 +94,7 @@ export async function analyzeImage(
     form.append('crop_y1', String(cropCoords[1]))
     form.append('crop_x2', String(cropCoords[2]))
     form.append('crop_y2', String(cropCoords[3]))
+    if (cropSource) form.append('crop_source', cropSource)
   }
   const res = await fetch('/analyze', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await readError(res, 'Analyze failed'))
