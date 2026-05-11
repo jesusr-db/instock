@@ -31,6 +31,8 @@ function PipelineSummary({ analyzeResult }: { analyzeResult: AnalyzeResult }) {
     const top = detections?.[0]
     const conf = top ? ` (${Math.round(top.confidence * 100)}% conf)` : ''
     steps.push({ icon: '🎯', text: `YOLO crop${conf}` })
+  } else if (detection_stage === 'user-crop') {
+    steps.push({ icon: '✂️', text: 'User crop' })
   } else if (detection_stage === 'fallback') {
     steps.push({ icon: '🖼️', text: 'Full image', sub: 'YOLO: no products detected' })
   } else {

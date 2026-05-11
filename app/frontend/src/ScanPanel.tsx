@@ -17,24 +17,51 @@ export default function ScanPanel({
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
+  const [draggingOver, setDraggingOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
+  function setImageFile(f: File) {
     setFile(f)
     setPreview(URL.createObjectURL(f))
   }
 
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (f) setImageFile(f)
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDraggingOver(true)
+  }
+
+  function handleDragLeave() {
+    setDraggingOver(false)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDraggingOver(false)
+    const f = e.dataTransfer.files[0]
+    if (f && f.type.startsWith('image/')) setImageFile(f)
+  }
+
   return (
     <div style={s.panel}>
-      <div style={s.uploadArea} onClick={() => inputRef.current?.click()}>
+      <div
+        style={{ ...s.uploadArea, ...(draggingOver ? s.uploadAreaDragging : {}) }}
+        onClick={() => inputRef.current?.click()}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {preview ? (
           <img src={preview} alt="Preview" style={s.preview} />
         ) : (
           <div style={s.placeholder}>
             <div style={s.cameraIcon}>📷</div>
-            <p style={s.hint}>Tap to take a photo or select image</p>
+            <p style={s.hint}>{draggingOver ? 'Drop image here' : 'Tap / drag image here'}</p>
           </div>
         )}
         <input
@@ -87,6 +114,11 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     overflow: 'hidden',
     background: '#fff',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  uploadAreaDragging: {
+    borderColor: '#1B3A6B',
+    background: '#eff4ff',
   },
   preview: { width: '100%', objectFit: 'cover' },
   placeholder: { textAlign: 'center', padding: 32 },

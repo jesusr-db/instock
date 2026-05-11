@@ -14,7 +14,9 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
   const [selectedYolo, setSelectedYolo] = useState<number | null>(null)
   const [drawnBox, setDrawnBox] = useState<[number, number, number, number] | null>(null)
   const [drawMode, setDrawMode] = useState(false)
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  // useRef for dragStart so it's readable immediately in handlePointerMove
+  // without waiting for a React re-render (mobile fires move before render)
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null)
   const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null)
 
   const imageUrl = React.useMemo(() => URL.createObjectURL(imageFile), [imageFile])
@@ -30,54 +32,47 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
   }
 
   const getRelativePos = useCallback(
-    (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>): { x: number; y: number } => {
+    (e: React.PointerEvent<HTMLDivElement>): { x: number; y: number } => {
       const rect = containerRef.current!.getBoundingClientRect()
-      let clientX: number
-      let clientY: number
-      if ('touches' in e) {
-        const touch = e.touches[0] ?? e.changedTouches[0]
-        clientX = touch.clientX
-        clientY = touch.clientY
-      } else {
-        clientX = e.clientX
-        clientY = e.clientY
-      }
       return {
-        x: Math.max(0, Math.min(clientX - rect.left, rect.width)),
-        y: Math.max(0, Math.min(clientY - rect.top, rect.height)),
+        x: Math.max(0, Math.min(e.clientX - rect.left, rect.width)),
+        y: Math.max(0, Math.min(e.clientY - rect.top, rect.height)),
       }
     },
     []
   )
 
-  function handlePointerDown(e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) {
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (!drawMode) return
     e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
     const pos = getRelativePos(e)
-    setDragStart(pos)
+    dragStartRef.current = pos
     setDragCurrent(pos)
     setSelectedYolo(null)
     setDrawnBox(null)
   }
 
-  function handlePointerMove(e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) {
-    if (!drawMode || !dragStart) return
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!drawMode || !dragStartRef.current) return
     e.preventDefault()
     setDragCurrent(getRelativePos(e))
   }
 
-  function handlePointerUp(e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) {
-    if (!drawMode || !dragStart || !dragCurrent) return
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    const start = dragStartRef.current
+    if (!drawMode || !start) return
     e.preventDefault()
+    const current = dragCurrent ?? getRelativePos(e)
     const { scaleX, scaleY } = getScale()
-    const x1 = Math.round(Math.min(dragStart.x, dragCurrent.x) * scaleX)
-    const y1 = Math.round(Math.min(dragStart.y, dragCurrent.y) * scaleY)
-    const x2 = Math.round(Math.max(dragStart.x, dragCurrent.x) * scaleX)
-    const y2 = Math.round(Math.max(dragStart.y, dragCurrent.y) * scaleY)
+    const x1 = Math.round(Math.min(start.x, current.x) * scaleX)
+    const y1 = Math.round(Math.min(start.y, current.y) * scaleY)
+    const x2 = Math.round(Math.max(start.x, current.x) * scaleX)
+    const y2 = Math.round(Math.max(start.y, current.y) * scaleY)
     if (x2 - x1 > 5 && y2 - y1 > 5) {
       setDrawnBox([x1, y1, x2, y2])
     }
-    setDragStart(null)
+    dragStartRef.current = null
     setDragCurrent(null)
     setDrawMode(false)
   }
@@ -92,7 +87,7 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
   }
 
   const hasSelection = selectedYolo !== null || drawnBox !== null
-  const isDragging = dragStart !== null && dragCurrent !== null
+  const isDragging = dragStartRef.current !== null && dragCurrent !== null
 
   const { scaleX, scaleY } = imageLoaded ? getScale() : { scaleX: 1, scaleY: 1 }
 
@@ -114,13 +109,14 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
   }
 
   function dragRectStyle(): React.CSSProperties | null {
-    if (!dragStart || !dragCurrent) return null
+    const start = dragStartRef.current
+    if (!start || !dragCurrent) return null
     return {
       position: 'absolute',
-      left: Math.min(dragStart.x, dragCurrent.x),
-      top: Math.min(dragStart.y, dragCurrent.y),
-      width: Math.abs(dragCurrent.x - dragStart.x),
-      height: Math.abs(dragCurrent.y - dragStart.y),
+      left: Math.min(start.x, dragCurrent.x),
+      top: Math.min(start.y, dragCurrent.y),
+      width: Math.abs(dragCurrent.x - start.x),
+      height: Math.abs(dragCurrent.y - start.y),
       border: '2px dashed #2563eb',
       background: 'rgba(37,99,235,0.1)',
       boxSizing: 'border-box',
@@ -157,14 +153,11 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
           position: 'relative',
           cursor: drawMode ? 'crosshair' : 'default',
           userSelect: 'none',
-          touchAction: drawMode ? 'none' : 'auto',
+          touchAction: 'none',
         }}
-        onMouseDown={handlePointerDown}
-        onMouseMove={handlePointerMove}
-        onMouseUp={handlePointerUp}
-        onTouchStart={handlePointerDown}
-        onTouchMove={handlePointerMove}
-        onTouchEnd={handlePointerUp}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
       >
         <img
           ref={imgRef}
@@ -205,7 +198,7 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
           style={{ ...cs.btn, ...(drawMode ? cs.btnActive : cs.btnSecondary) }}
           onClick={() => {
             setDrawMode(!drawMode)
-            setDragStart(null)
+            dragStartRef.current = null
             setDragCurrent(null)
           }}
         >

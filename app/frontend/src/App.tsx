@@ -56,12 +56,13 @@ export default function App() {
       const detectResult = await detectCrops(file)
       clearTimers()
       setDetectedCrops(detectResult.crops)
-      setAppState('crop-select')
-    } catch (e) {
+    } catch {
+      // Detect failure is non-fatal — fall through to crop-select with no crops
+      // so the user can always draw their own region
       clearTimers()
-      setError(e instanceof Error ? e.message : 'Unexpected error')
-      setAppState('error')
+      setDetectedCrops([])
     }
+    setAppState('crop-select')
   }
 
   async function handleCropConfirm(coords: [number, number, number, number] | null) {
