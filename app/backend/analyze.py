@@ -40,7 +40,9 @@ def build_vision_prompt() -> str:
         "]} "
         "Provide exactly 3 candidates ordered by confidence_score (highest first). "
         "category must be one of: tobacco, beverage, snack. "
-        "If no product is visible, return brand=null and an empty top_3_sku_candidates array."
+        "IMPORTANT: Only identify a product if you can clearly read the brand name from the image. "
+        "If the image is too small, blurry, or the label is not legible, return brand=null "
+        "and an empty top_3_sku_candidates array. Do NOT guess a brand you cannot see."
     )
 
 
