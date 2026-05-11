@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -33,40 +33,6 @@ def health() -> dict:
     """Liveness probe."""
     return {"status": "ok"}
 
-
-@app.post("/debug/detect")
-async def debug_detect(file: UploadFile = File(...)) -> dict:
-    """Temporary: test YOLO raw response from app context. Remove after debugging."""
-    import base64, time, traceback
-    settings = get_settings()
-    image_bytes = await file.read()
-    try:
-        from databricks.sdk import WorkspaceClient
-        from databricks.sdk.config import Config as _Config
-        w = WorkspaceClient(config=_Config(host=settings.databricks_host, http_timeout_seconds=300))
-        b64 = base64.b64encode(image_bytes).decode()
-        t0 = time.time()
-        response = w.serving_endpoints.query(
-            name=settings.yolo_endpoint,
-            dataframe_records=[{"image": b64}],
-        )
-        elapsed = round(time.time() - t0, 2)
-        predictions = response.predictions or []
-        raw = predictions[0] if predictions else {}
-        raw_dets = []
-        if isinstance(raw, dict):
-            val = raw.get("detections", [])
-            raw_dets = val if isinstance(val, list) else []
-        above = [d for d in raw_dets if d.get("confidence", 0) >= settings.yolo_confidence_threshold]
-        return {
-            "elapsed_s": elapsed,
-            "raw_detections": raw_dets,
-            "above_threshold": above,
-            "yolo_confidence_threshold": settings.yolo_confidence_threshold,
-            "yolo_endpoint": settings.yolo_endpoint,
-        }
-    except Exception:
-        return {"error": traceback.format_exc()}
 
 
 @app.get("/config/models")
