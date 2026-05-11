@@ -14,6 +14,7 @@ import json
 import os
 import re
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from openai import OpenAI
@@ -40,7 +41,14 @@ def build_vision_prompt() -> str:
         "]} "
         "Provide exactly 3 candidates ordered by confidence_score (highest first). "
         "category must be one of: tobacco, beverage, snack. "
-        "If no product is visible, return brand=null and an empty top_3_sku_candidates array."
+        "IMPORTANT: Only identify a product if you can clearly read the brand name from the image. "
+        "If the image is too small, blurry, or the label is not legible, return brand=null "
+        "and an empty top_3_sku_candidates array. Do NOT guess a brand you cannot see. "
+        "For the size field and every candidate_name, always specify pack count: "
+        "add '1ct' or 'single' for individual units (one bottle, one can, one bag); "
+        "add the count (e.g., '24pk', '6pk', '12pk') for multipacks or cases. "
+        "If uncertain, default to '1ct'. "
+        "Example: '20oz 1ct' for a single bottle, '20oz 24pk' for a case of 24."
     )
 
 
@@ -73,12 +81,19 @@ def _save_image(image_bytes: bytes, ext: str, scan_id: str) -> str | None:
 async def analyze(
     file: UploadFile = File(...),
     model_route: str = Form(default=None),
+    crop_x1: Optional[int] = Form(default=None),
+    crop_y1: Optional[int] = Form(default=None),
+    crop_x2: Optional[int] = Form(default=None),
+    crop_y2: Optional[int] = Form(default=None),
 ):
     """Vision inference endpoint.
 
-    Body: multipart/form-data with `file` (image) and optional `model_route`.
+    Body: multipart/form-data with `file` (image), optional `model_route`,
+    and optional `crop_x1/y1/x2/y2` pixel coords (original image space).
+
     Returns: scan_id, model_route, image_volume_path, brand, category,
-             product_name, size, flavor, top_3_sku_candidates.
+             product_name, size, flavor, top_3_sku_candidates,
+             detection_stage, detections (when yolo stage ran).
     """
     settings = get_settings()
     route = model_route or settings.model_route
@@ -92,8 +107,50 @@ async def analyze(
 
     volume_path = _save_image(image_bytes, ext, scan_id)
 
-    b64 = base64.b64encode(image_bytes).decode()
-    mime = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    vlm_image_bytes = image_bytes
+    detection_stage = "disabled"
+    detections_meta: list[dict] | None = None
+
+    user_crop_provided = all(v is not None for v in (crop_x1, crop_y1, crop_x2, crop_y2))
+
+    if user_crop_provided:
+        from io import BytesIO as _BytesIO
+
+        from PIL import Image as _Image
+
+        img = _Image.open(_BytesIO(image_bytes))
+        w_img, h_img = img.size
+        x1 = max(0, min(int(crop_x1), w_img))  # type: ignore[arg-type]
+        y1 = max(0, min(int(crop_y1), h_img))  # type: ignore[arg-type]
+        x2 = max(0, min(int(crop_x2), w_img))  # type: ignore[arg-type]
+        y2 = max(0, min(int(crop_y2), h_img))  # type: ignore[arg-type]
+        if x2 > x1 and y2 > y1:
+            crop_img = img.crop((x1, y1, x2, y2))
+            buf = _BytesIO()
+            crop_img.save(buf, format="JPEG")
+            vlm_image_bytes = buf.getvalue()
+            detection_stage = "user-crop"
+        else:
+            detection_stage = "fallback"
+
+    elif settings.use_detection_stage:
+        from backend.detect import detect_products
+
+        crops = detect_products(image_bytes, settings)
+        if crops:
+            vlm_image_bytes = crops[0].image_bytes
+            detection_stage = "yolo"
+            detections_meta = [
+                {"crop_index": c.crop_index, "bbox": list(c.bbox), "confidence": c.confidence}
+                for c in crops
+            ]
+        else:
+            detection_stage = "fallback"
+
+    b64 = base64.b64encode(vlm_image_bytes).decode()
+    mime = "image/jpeg" if vlm_image_bytes is not image_bytes else (
+        "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
+    )
 
     client = OpenAI(
         api_key=get_databricks_token(settings),
@@ -125,9 +182,13 @@ async def analyze(
     except ModelResponseError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    return {
+    result = {
         "scan_id": scan_id,
         "model_route": route,
         "image_volume_path": volume_path,
+        "detection_stage": detection_stage,
         **parsed,
     }
+    if detections_meta is not None:
+        result["detections"] = detections_meta
+    return result

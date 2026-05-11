@@ -4,3 +4,14 @@ resources:
       name: "instockcv"
       source_code_path: ../app
       description: "Mobile-optimized retail inventory checker — photograph a product, get SKU + quantity. FastAPI backend + React frontend, AI Gateway for vision."
+      resources:
+        - name: "instockcv-yolo"
+          description: "YOLO shelf detection endpoint for product region cropping"
+          serving_endpoint:
+            name: instockcv-yolo
+            permission: CAN_QUERY
+        - name: "aigwjmr"
+          description: "AI Gateway endpoint for VLM SKU extraction"
+          serving_endpoint:
+            name: aigwjmr
+            permission: CAN_QUERY

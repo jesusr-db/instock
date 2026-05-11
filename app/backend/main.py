@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.analyze import router as analyze_router
 from backend.config import get_settings
+from backend.detect_route import router as detect_router
 from backend.lookup import router as lookup_router
 
 app = FastAPI(title="inStockCV", version="0.1.0")
@@ -26,12 +27,14 @@ app.add_middleware(
 
 app.include_router(analyze_router)
 app.include_router(lookup_router)
+app.include_router(detect_router)
 
 
 @app.get("/health")
 def health() -> dict:
     """Liveness probe."""
     return {"status": "ok"}
+
 
 
 @app.get("/config/models")

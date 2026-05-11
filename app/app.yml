@@ -17,3 +17,9 @@ env:
     value: /Volumes/vdm_classic_rikfy0_catalog/instockcv_dev/scan_images
   - name: SQL_WAREHOUSE_HTTP_PATH
     value: /sql/1.0/warehouses/5067b513037fbf07
+  - name: USE_DETECTION_STAGE
+    value: "true"
+  - name: YOLO_CONFIDENCE_THRESHOLD
+    value: "0.3"
+  - name: YOLO_ENDPOINT
+    value: instockcv-yolo
