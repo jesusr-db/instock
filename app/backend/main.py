@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -35,10 +35,9 @@ def health() -> dict:
 
 
 @app.post("/debug/detect")
-async def debug_detect(file: "UploadFile" = "File(...)") -> dict:  # type: ignore[assignment]
+async def debug_detect(file: UploadFile = File(...)) -> dict:
     """Temporary: test YOLO raw response from app context. Remove after debugging."""
-    import base64, time, traceback, json as _json, ast
-    from fastapi import File, UploadFile as _UF
+    import base64, time, traceback
     from backend.config import get_databricks_token
     settings = get_settings()
     image_bytes = await file.read()
