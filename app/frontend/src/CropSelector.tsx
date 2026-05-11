@@ -96,6 +96,9 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
 
   const { scaleX, scaleY } = imageLoaded ? getScale() : { scaleX: 1, scaleY: 1 }
 
+  const dragRect = isDragging ? dragRectStyle() : null
+  const drawnRect = !isDragging && drawnBox ? drawnRectStyle() : null
+
   function bboxStyle(bbox: [number, number, number, number], selected: boolean): React.CSSProperties {
     return {
       position: 'absolute',
@@ -188,12 +191,12 @@ export default function CropSelector({ imageFile, crops, onConfirm }: CropSelect
           </div>
         ))}
 
-        {isDragging && dragRectStyle() && (
-          <div style={dragRectStyle()!} />
+        {dragRect && (
+          <div style={dragRect} />
         )}
 
-        {!isDragging && drawnBox && drawnRectStyle() && (
-          <div style={drawnRectStyle()!} />
+        {drawnRect && (
+          <div style={drawnRect} />
         )}
       </div>
 
