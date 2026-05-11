@@ -50,11 +50,7 @@ export interface ModelsConfig {
   default: string
 }
 
-export interface DetectCrop {
-  crop_index: number
-  bbox: [number, number, number, number]
-  confidence: number
-}
+export type DetectCrop = Detection
 
 export interface DetectResult {
   crops: DetectCrop[]
