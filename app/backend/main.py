@@ -34,49 +34,46 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/debug/detect")
-def debug_detect() -> dict:
-    """Temporary: test YOLO endpoint from app context. Remove after debugging."""
-    import base64, time, traceback
-    from pathlib import Path
+@app.post("/debug/detect")
+async def debug_detect(file: "UploadFile" = "File(...)") -> dict:  # type: ignore[assignment]
+    """Temporary: test YOLO raw response from app context. Remove after debugging."""
+    import base64, time, traceback, json as _json, ast
+    from fastapi import File, UploadFile as _UF
+    from backend.config import get_databricks_token
     settings = get_settings()
-    # Use a tiny 1x1 white JPEG so we don't need a real image file
-    tiny_jpeg = (
-        b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00'
-        b'\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t'
-        b'\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a'
-        b'\x1f\x1e\x1d\x1a\x1c\x1c $.\' ",#\x1c\x1c(7),01444\x1f\'9=82<.342\x1e\x1e'
-        b'\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e\x1e'
-        b'\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00'
-        b'\x1f\x00\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00'
-        b'\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xc4\x00'
-        b'\xb5\x10\x00\x02\x01\x03\x03\x02\x04\x03\x05\x05\x04\x04\x00\x00'
-        b'\x01}\x01\x02\x03\x00\x04\x11\x05\x12!1A\x06\x13Qa\x07"q\x142\x81'
-        b'\x91\xa1\x08#B\xb1\xc1\x15R\xd1\xf0$3br\x82\t\n\x16\x17\x18\x19'
-        b'\x1a%&\'()*456789:CDEFGHIJKLMNOPQRSTUVWXYZ'
-        b'cdefghijklmnopqrstuvwxyz\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xfb'
-        b'd\x00\x00\x00\x00\xff\xd9'
-    )
+    image_bytes = await file.read()
     try:
-        from backend.detect import detect_products
+        from databricks.sdk import WorkspaceClient
+        from databricks.sdk.config import Config
+        token = get_databricks_token(settings)
+        w = WorkspaceClient(config=Config(
+            host=settings.databricks_host,
+            token=token,
+            http_timeout_seconds=300,
+        ))
+        b64 = base64.b64encode(image_bytes).decode()
         t0 = time.time()
-        crops = detect_products(tiny_jpeg, settings)
-        elapsed = time.time() - t0
+        response = w.serving_endpoints.query(
+            name=settings.yolo_endpoint,
+            dataframe_records=[{"image": b64}],
+        )
+        elapsed = round(time.time() - t0, 2)
+        predictions = response.predictions or []
+        raw = predictions[0] if predictions else {}
+        raw_dets = []
+        if isinstance(raw, dict):
+            val = raw.get("detections", [])
+            raw_dets = val if isinstance(val, list) else []
+        above = [d for d in raw_dets if d.get("confidence", 0) >= settings.yolo_confidence_threshold]
         return {
-            "use_detection_stage": settings.use_detection_stage,
-            "yolo_endpoint": settings.yolo_endpoint,
+            "elapsed_s": elapsed,
+            "raw_detections": raw_dets,
+            "above_threshold": above,
             "yolo_confidence_threshold": settings.yolo_confidence_threshold,
-            "databricks_host": settings.databricks_host,
-            "elapsed_s": round(elapsed, 2),
-            "crops": len(crops),
-            "error": None,
-        }
-    except Exception as e:
-        return {
-            "use_detection_stage": settings.use_detection_stage,
             "yolo_endpoint": settings.yolo_endpoint,
-            "error": traceback.format_exc(),
         }
+    except Exception:
+        return {"error": traceback.format_exc()}
 
 
 @app.get("/config/models")
