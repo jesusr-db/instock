@@ -42,7 +42,8 @@ async def debug_detect(file: UploadFile = File(...)) -> dict:
     image_bytes = await file.read()
     try:
         from databricks.sdk import WorkspaceClient
-        w = WorkspaceClient(host=settings.databricks_host, http_timeout_seconds=300)
+        from databricks.sdk.config import Config as _Config
+        w = WorkspaceClient(config=_Config(host=settings.databricks_host, http_timeout_seconds=300))
         b64 = base64.b64encode(image_bytes).decode()
         t0 = time.time()
         response = w.serving_endpoints.query(

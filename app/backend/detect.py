@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from io import BytesIO
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.config import Config
 from PIL import Image
 
 from backend.config import Settings
@@ -34,7 +35,7 @@ def detect_products(image_bytes: bytes, settings: Settings) -> list[DetectedCrop
         # Databricks Apps, CLI profile locally).  Passing an explicit token
         # alongside DATABRICKS_CLIENT_ID/SECRET causes "multiple auth methods"
         # ValueError inside the app.
-        w = WorkspaceClient(host=settings.databricks_host, http_timeout_seconds=300)
+        w = WorkspaceClient(config=Config(host=settings.databricks_host, http_timeout_seconds=300))
         b64 = base64.b64encode(image_bytes).decode()
         response = w.serving_endpoints.query(
             name=settings.yolo_endpoint,
