@@ -65,6 +65,7 @@ export default function App() {
   }
 
   async function handleCropConfirm(coords: [number, number, number, number] | null) {
+    clearTimers()
     setAppState('analyzing')
     setLoadingStep('analyzing')
 
@@ -94,6 +95,7 @@ export default function App() {
     setCurrentFile(null)
     setDetectedCrops([])
     setError(null)
+    setLoadingStep('uploading')
     setAppState('idle')
   }
 
