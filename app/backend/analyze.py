@@ -129,7 +129,9 @@ async def analyze(
             buf = _BytesIO()
             crop_img.save(buf, format="JPEG")
             vlm_image_bytes = buf.getvalue()
-        detection_stage = "user-crop"
+            detection_stage = "user-crop"
+        else:
+            detection_stage = "fallback"
 
     elif settings.use_detection_stage:
         from backend.detect import detect_products
