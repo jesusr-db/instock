@@ -29,6 +29,7 @@ def test_required_columns_present():
         "product_name",
         "size",
         "flavor",
+        "description",
         "quantity_on_hand",
     }
     assert required.issubset(rows[0].keys())
@@ -50,6 +51,14 @@ def test_deterministic_output():
     a = [r["sku_id"] for r in generate_inventory(seed=42)]
     b = [r["sku_id"] for r in generate_inventory(seed=42)]
     assert a == b, "Output is not deterministic for the same seed"
+
+
+def test_pinned_skus_always_present():
+    rows = generate_inventory(seed=42)
+    sku_ids = {r["sku_id"] for r in rows}
+    assert "BEV-DRPE-ORIG-20OZ-1CT" in sku_ids
+    pinned = next(r for r in rows if r["sku_id"] == "BEV-DRPE-ORIG-20OZ-1CT")
+    assert pinned["description"] is not None
 
 
 def test_quantity_in_range():

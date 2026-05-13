@@ -78,6 +78,21 @@ TOBACCO_PACK_COUNTS = ["1ct", "10ct"]   # single pack, full carton
 BEVERAGE_PACK_COUNTS = ["1ct", "6pk", "12pk", "24pk"]
 SNACK_PACK_COUNTS = ["1ct", "6pk", "12pk"]
 
+# Pinned SKUs are always inserted regardless of the random seed.
+# Use these for SKUs that must exist for the app to behave correctly.
+PINNED_SKUS: list[dict] = [
+    {
+        "sku_id": "BEV-DRPE-ORIG-20OZ-1CT",
+        "brand": "Dr Pepper",
+        "category": "beverage",
+        "product_name": "Dr Pepper Original",
+        "size": "20oz",
+        "flavor": None,
+        "description": "Dr Pepper Original 20oz single bottle — individual unit sold at retail",
+        "quantity_on_hand": 12,
+    },
+]
+
 
 def _sku(category: str, brand: str, variant: str, size: str, pack: str) -> str:
     """Deterministic SKU id from product attributes."""
@@ -130,6 +145,7 @@ def _fill(
                 "product_name": f"{brand} {variant}",
                 "size": display_size,
                 "flavor": _flavor_for(variant),
+                "description": None,
                 "quantity_on_hand": rng.randint(0, 50),
             }
         )
@@ -153,6 +169,12 @@ def generate_inventory(seed: int = 42) -> list[dict]:
     _fill(rng, "tobacco", TOBACCO, TOBACCO_SIZES, TOBACCO_PACK_COUNTS, 200, rows, seen)
     _fill(rng, "beverage", BEVERAGES, BEVERAGE_SIZES, BEVERAGE_PACK_COUNTS, 200, rows, seen)
     _fill(rng, "snack", SNACKS, SNACK_SIZES, SNACK_PACK_COUNTS, 100, rows, seen)
+
+    for pinned in PINNED_SKUS:
+        if pinned["sku_id"] not in seen:
+            seen.add(pinned["sku_id"])
+            rows.append(pinned)
+
     return rows
 
 

@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.inventory (
     product_name     STRING NOT NULL,
     size             STRING NOT NULL,
     flavor           STRING,
+    description      STRING,
     quantity_on_hand INT NOT NULL
 ) USING DELTA
 """
@@ -140,6 +141,7 @@ def create_tables(spark, catalog: str, schema: str, seed: int = 42) -> None:
                 StructField("product_name", StringType(), nullable=False),
                 StructField("size", StringType(), nullable=False),
                 StructField("flavor", StringType(), nullable=True),
+                StructField("description", StringType(), nullable=True),
                 StructField("quantity_on_hand", IntegerType(), nullable=False),
             ]
         )
