@@ -72,16 +72,22 @@ def test_settings_yolo_threshold_override(monkeypatch):
 def test_clip_settings_default_to_empty(monkeypatch, tmp_path):
     """clip_endpoint, sam_endpoint, clip_vs_index_name default to '' if txt files absent."""
     import importlib
-    from pathlib import Path
     import backend.config as cfg_module
 
+    # Required fields
     monkeypatch.setenv("INVENTORY_TABLE", "c.s.inventory")
     monkeypatch.setenv("SCAN_LOG_TABLE", "c.s.scan_log")
     monkeypatch.setenv("IMAGE_VOLUME_PATH", "/tmp/vol")
     monkeypatch.setenv("SQL_WAREHOUSE_HTTP_PATH", "/sql/1.0/warehouses/abc")
+
+    # Ensure any env vars leaked from other tests don't override defaults
+    monkeypatch.delenv("CLIP_ENDPOINT", raising=False)
+    monkeypatch.delenv("SAM_ENDPOINT", raising=False)
+    monkeypatch.delenv("CLIP_VS_INDEX_NAME", raising=False)
+
     monkeypatch.chdir(tmp_path)  # no txt files here
 
-    # Also stub out the project-root candidates so the project setup/ txt files
+    # Stub out the project-root candidates so the project setup/ txt files
     # (which exist after deploy-script tasks land) don't satisfy the default lookup.
     cfg_module.get_settings.cache_clear()
     importlib.reload(cfg_module)
