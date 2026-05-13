@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from setup.create_tables import (  # noqa: E402
     build_ddl_inventory,
     build_ddl_scan_log,
+    build_ddl_sku_clip_embeddings,
     create_tables,
 )
 
@@ -77,3 +78,24 @@ def test_create_tables_calls_spark_sql():
     mock_df.write.mode.return_value.saveAsTable.assert_called_once()
     saved_to = mock_df.write.mode.return_value.saveAsTable.call_args.args[0]
     assert saved_to == "main.instockcv.inventory"
+
+
+def test_sku_clip_embeddings_ddl_contains_required_columns():
+    ddl = build_ddl_sku_clip_embeddings("main", "instockcv")
+    assert "combo_key" in ddl
+    assert "embedding" in ddl
+    assert "ARRAY<FLOAT>" in ddl
+    assert "brand" in ddl
+    assert "variant" in ddl
+
+
+def test_create_tables_calls_clip_embeddings_ddl():
+    mock_spark = MagicMock()
+    mock_df = MagicMock()
+    mock_spark.createDataFrame.return_value = mock_df
+    mock_df.write.mode.return_value.saveAsTable = MagicMock()
+
+    create_tables(mock_spark, "cat", "sc", seed=42)
+
+    executed = [str(c.args[0]) for c in mock_spark.sql.call_args_list]
+    assert any("sku_clip_embeddings" in q for q in executed)

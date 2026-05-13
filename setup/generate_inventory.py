@@ -12,7 +12,9 @@ Contract:
 """
 from __future__ import annotations
 
+import json as _json
 import random
+from pathlib import Path as _Path
 from typing import Optional
 
 # Brand catalogs: (brand_name, [variants])
@@ -77,6 +79,34 @@ _CATEGORY_CODE = {"tobacco": "TOB", "beverage": "BEV", "snack": "SNK"}
 TOBACCO_PACK_COUNTS = ["1ct", "10ct"]   # single pack, full carton
 BEVERAGE_PACK_COUNTS = ["1ct", "6pk", "12pk", "24pk"]
 SNACK_PACK_COUNTS = ["1ct", "6pk", "12pk"]
+
+
+def _load_combo_image_map() -> dict[str, str]:
+    """Load brand×variant → image filename mapping from reference_images/manifest.json.
+
+    Returns empty dict if manifest not found (non-fatal — used only by build_clip_index.py).
+    """
+    candidates = [
+        _Path(__file__).resolve().parent.parent / "reference_images" / "manifest.json",
+        _Path("reference_images/manifest.json"),
+    ]
+    for p in candidates:
+        if p.is_file():
+            try:
+                data = _json.loads(p.read_text())
+                result: dict[str, str] = {}
+                for cat in ("tobacco", "beverage", "snack"):
+                    result.update(data.get(cat, {}))
+                return result
+            except (OSError, ValueError):
+                continue
+    return {}
+
+
+# Maps "Brand_Variant" combo keys → reference image filenames.
+# Populated from reference_images/manifest.json at import time.
+# Used by setup/build_clip_index.py to find which combos have reference images.
+COMBO_IMAGE_MAP: dict[str, str] = _load_combo_image_map()
 
 
 def _sku(category: str, brand: str, variant: str, size: str, pack: str) -> str:
