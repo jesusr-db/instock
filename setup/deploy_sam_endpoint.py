@@ -16,8 +16,8 @@ import time
 
 ENDPOINT_NAME = "instockcv-sam"
 MODEL_NAME = "sam_shelf_segmenter"
-HF_REPO = "han-cai/efficientvit-sam"
-HF_FILENAME = "xl1.pt"
+HF_REPO = "mit-han-lab/efficientvit-sam"
+HF_FILENAME = "efficientvit_sam_xl1.pt"
 
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
