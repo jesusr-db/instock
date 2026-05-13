@@ -90,4 +90,3 @@ resources:
             client: "1"
             dependencies:
               - "databricks-sdk>=0.28.0"
-              - "databricks-vectorsearch>=0.37.0"

@@ -117,53 +117,69 @@ def _write_embeddings_to_delta(spark, rows, catalog, schema):
     print(f"Wrote {len(rows)} embeddings to {catalog}.{schema}.sku_clip_embeddings")
 
 
-def _create_or_sync_vs_index(workspace_host, token, catalog, schema):
-    from databricks.vectorsearch.client import VectorSearchClient
-
-    vs_client = VectorSearchClient(
-        workspace_url=workspace_host,
-        personal_access_token=token,
-        disable_notice=True,
+def _vs_request(workspace_host: str, token: str, method: str, path: str, body=None):
+    import urllib.request
+    import urllib.error
+    url = f"{workspace_host}/api/2.0/vector-search/{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        url, data=data, method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
     )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read()), None
+    except urllib.error.HTTPError as e:
+        return None, e
+
+
+def _create_or_sync_vs_index(workspace_host, token, catalog, schema):
     full_index_name = f"{catalog}.{schema}.{INDEX_NAME}"
 
-    try:
-        idx = vs_client.get_index(index_name=full_index_name)
-        print(f"Index '{full_index_name}' exists. Syncing...")
-        idx.sync()
-    except Exception:
-        print(f"Creating Direct Access index '{full_index_name}'...")
-        vs_client.create_direct_access_index(
-            endpoint_name="databricks-vector-search",
-            index_name=full_index_name,
-            primary_key="combo_key",
-            embedding_dimension=512,
-            embedding_vector_column="embedding",
-            schema={
+    _, err = _vs_request(workspace_host, token, "GET", f"indexes/{full_index_name}")
+    if err is None:
+        print(f"Index '{full_index_name}' already exists.")
+        return full_index_name
+
+    print(f"Creating Direct Access index '{full_index_name}'...")
+    body = {
+        "name": full_index_name,
+        "endpoint_name": "databricks-vector-search",
+        "primary_key": "combo_key",
+        "index_type": "DIRECT_ACCESS",
+        "direct_access_index_spec": {
+            "embedding_vector_columns": [
+                {"name": "embedding", "embedding_dimension": 512}
+            ],
+            "schema_json": json.dumps({
                 "combo_key": "string",
                 "brand": "string",
                 "variant": "string",
                 "category": "string",
                 "embedding": "array<float>",
-            },
-        )
-
+            }),
+        },
+    }
+    result, err = _vs_request(workspace_host, token, "POST", "indexes", body)
+    if err:
+        raise RuntimeError(f"Failed to create VS index: {err.read().decode()}")
+    print(f"Index created: {result.get('name')}")
     return full_index_name
 
 
 def _upsert_to_vs_index(workspace_host, token, catalog, schema, rows):
-    from databricks.vectorsearch.client import VectorSearchClient
-    vs_client = VectorSearchClient(
-        workspace_url=workspace_host,
-        personal_access_token=token,
-        disable_notice=True,
-    )
     full_index_name = f"{catalog}.{schema}.{INDEX_NAME}"
-    idx = vs_client.get_index(index_name=full_index_name)
     batch_size = 50
     for i in range(0, len(rows), batch_size):
         batch = rows[i:i + batch_size]
-        idx.upsert(batch)
+        body = {"inputs_json": json.dumps(batch)}
+        _, err = _vs_request(workspace_host, token, "POST",
+                             f"indexes/{full_index_name}/upsert-data", body)
+        if err:
+            raise RuntimeError(f"Upsert failed at row {i}: {err.read().decode()}")
         print(f"  Upserted rows {i}–{i + len(batch) - 1}")
     print(f"All {len(rows)} rows upserted to {full_index_name}")
 
