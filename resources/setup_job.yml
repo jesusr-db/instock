@@ -33,6 +33,18 @@ resources:
               - ${var.schema}
           environment_key: default
 
+        - task_key: build_clip_index
+          depends_on:
+            - task_key: provision_tables
+          spark_python_task:
+            python_file: ../setup/build_clip_index.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+          environment_key: clip_index
+
       environments:
         - environment_key: default
           spec:
@@ -49,3 +61,12 @@ resources:
               - "mlflow>=2.10.0"
               - "Pillow>=10.3.0"
               - "huggingface_hub>=0.20.0"
+
+        - environment_key: clip_index
+          spec:
+            client: "1"
+            dependencies:
+              - "databricks-sdk>=0.28.0"
+              - "databricks-vectorsearch>=0.37.0"
+              - "open-clip-torch>=2.24.0"
+              - "Pillow>=10.3.0"
