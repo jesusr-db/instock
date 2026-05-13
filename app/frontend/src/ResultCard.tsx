@@ -23,7 +23,9 @@ const BADGE_COLORS: Record<string, string> = {
 
 function PipelineSummary({ analyzeResult }: { analyzeResult: AnalyzeResult }) {
   const { detection_stage, detections, model_route } = analyzeResult
-  const modelLabel = model_route.replace('databricks-', '')
+  const modelLabel = model_route === 'clip'
+    ? 'CLIP + VS'
+    : model_route.replace('databricks-', '')
 
   const steps: { icon: string; text: string; sub?: string }[] = []
 

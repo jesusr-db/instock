@@ -30,6 +30,7 @@ export default function App() {
   const [error, setError]                     = useState<string | null>(null)
   const [models, setModels]                   = useState<string[]>([FALLBACK_MODEL])
   const [selectedModel, setSelectedModel]     = useState<string>(FALLBACK_MODEL)
+  const [inferenceMode, setInferenceMode]     = useState<'vlm' | 'clip'>('vlm')
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
@@ -75,7 +76,8 @@ export default function App() {
         currentFile!,
         selectedModel,
         coords ?? undefined,
-        cropSource
+        cropSource,
+        inferenceMode
       )
       setAnalyzed(analyzeResult)
       setLoadingStep('lookup')
@@ -115,6 +117,8 @@ export default function App() {
             models={models}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
+            inferenceMode={inferenceMode}
+            onInferenceModeChange={setInferenceMode}
           />
         )}
         {(appState === 'detecting' || appState === 'analyzing') && (

@@ -84,7 +84,8 @@ export async function analyzeImage(
   file: File,
   modelRoute: string,
   cropCoords?: [number, number, number, number],
-  cropSource?: 'yolo' | 'user-crop'
+  cropSource?: 'yolo' | 'user-crop',
+  inferenceMode: 'vlm' | 'clip' = 'vlm'
 ): Promise<AnalyzeResult> {
   const form = new FormData()
   form.append('file', file)
@@ -96,6 +97,7 @@ export async function analyzeImage(
     form.append('crop_y2', String(cropCoords[3]))
     if (cropSource) form.append('crop_source', cropSource)
   }
+  form.append('inference_mode', inferenceMode)
   const res = await fetch('/analyze', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await readError(res, 'Analyze failed'))
   return res.json()

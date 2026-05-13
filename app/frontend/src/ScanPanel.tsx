@@ -6,6 +6,8 @@ interface Props {
   models: string[]
   selectedModel: string
   onModelChange: (model: string) => void
+  inferenceMode: 'vlm' | 'clip'
+  onInferenceModeChange: (mode: 'vlm' | 'clip') => void
 }
 
 export default function ScanPanel({
@@ -14,6 +16,8 @@ export default function ScanPanel({
   models,
   selectedModel,
   onModelChange,
+  inferenceMode,
+  onInferenceModeChange,
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -91,6 +95,18 @@ export default function ScanPanel({
         </div>
       )}
 
+      <div style={s.toggleRow}>
+        <span style={{ fontSize: '0.8rem', color: '#888' }}>Mode</span>
+        <button
+          style={{ ...s.toggleBtn, ...(inferenceMode === 'vlm' ? s.toggleBtnActive : {}) }}
+          onClick={() => onInferenceModeChange('vlm')}
+        >VLM</button>
+        <button
+          style={{ ...s.toggleBtn, ...(inferenceMode === 'clip' ? s.toggleBtnActive : {}) }}
+          onClick={() => onInferenceModeChange('clip')}
+        >CLIP + VS</button>
+      </div>
+
       <button
         onClick={() => file && onSubmit(file)}
         disabled={!file || isLoading}
@@ -125,6 +141,9 @@ const s: Record<string, React.CSSProperties> = {
   cameraIcon: { fontSize: 48 },
   hint: { marginTop: 8, color: '#888', fontSize: 14 },
   modelRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  toggleRow: { display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' },
+  toggleBtn: { padding: '4px 12px', borderRadius: '14px', border: '1px solid #555', background: '#2a2a2a', color: '#ccc', cursor: 'pointer', fontSize: '0.8rem' },
+  toggleBtnActive: { background: '#e94e0f', borderColor: '#e94e0f', color: '#fff' },
   label: { fontSize: 14, color: '#555', minWidth: 50 },
   select: {
     flex: 1,
