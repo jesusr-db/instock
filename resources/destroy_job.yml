@@ -1,0 +1,24 @@
+resources:
+  jobs:
+    destroy_job:
+      name: "[inStockCV] Destroy"
+
+      tasks:
+        - task_key: teardown
+          spark_python_task:
+            python_file: ../setup/teardown.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --schema
+              - ${var.schema}
+          environment_key: teardown
+
+      environments:
+        - environment_key: teardown
+          spec:
+            client: "1"
+            dependencies:
+              - "databricks-sdk>=0.28.0"
+              - "databricks-vectorsearch>=0.37.0"
+              - "mlflow>=2.10.0"
