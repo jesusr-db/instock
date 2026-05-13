@@ -56,6 +56,51 @@ def _default_yolo_endpoint() -> str:
     return "instockcv-yolo"
 
 
+def _default_clip_endpoint() -> str:
+    """Read CLIP_ENDPOINT default from setup/clip_endpoint_name.txt."""
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "setup" / "clip_endpoint_name.txt",
+        Path("setup/clip_endpoint_name.txt"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                return path.read_text().strip()
+            except OSError:
+                continue
+    return ""
+
+
+def _default_sam_endpoint() -> str:
+    """Read SAM_ENDPOINT default from setup/sam_endpoint_name.txt."""
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "setup" / "sam_endpoint_name.txt",
+        Path("setup/sam_endpoint_name.txt"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                return path.read_text().strip()
+            except OSError:
+                continue
+    return ""
+
+
+def _default_clip_vs_index_name() -> str:
+    """Read CLIP_VS_INDEX_NAME default from setup/clip_index_name.txt."""
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "setup" / "clip_index_name.txt",
+        Path("setup/clip_index_name.txt"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                return path.read_text().strip()
+            except OSError:
+                continue
+    return ""
+
+
 def _default_databricks_host() -> str:
     """Resolve DATABRICKS_HOST, ensuring it has https:// prefix.
 
@@ -88,6 +133,9 @@ class Settings(BaseSettings):
     # override with YOLO_ENDPOINT env var in production.
     yolo_endpoint: str = _default_yolo_endpoint()
     yolo_confidence_threshold: float = 0.3
+    clip_endpoint: str = _default_clip_endpoint()
+    sam_endpoint: str = _default_sam_endpoint()
+    clip_vs_index_name: str = _default_clip_vs_index_name()
 
     model_config = SettingsConfigDict(
         env_file=".env",
