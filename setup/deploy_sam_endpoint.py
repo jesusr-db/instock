@@ -134,7 +134,7 @@ def _create_or_update_endpoint(workspace_client, full_model_name: str, model_ver
         ServedModelInput(
             model_name=full_model_name,
             model_version=model_version,
-            workload_size="GPU_SMALL",
+            workload_size="Small",
             scale_to_zero_enabled=True,
         )
     ]
