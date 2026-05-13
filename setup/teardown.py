@@ -19,21 +19,53 @@ import sys
 
 
 SERVING_ENDPOINTS = ["instockcv-sam", "instockcv-clip", "instockcv-yolo"]
+VS_ENDPOINT_NAME = "instockcv-vs"
 
 UC_MODELS = ["sam_shelf_segmenter", "clip_image_encoder", "yolo_shelf_detector"]
 
 VS_INDEX_NAME = "instockcv_clip_index"
 
 
+def _vs_delete(path: str) -> None:
+    import urllib.request
+    import urllib.error
+    try:
+        from databricks.sdk import WorkspaceClient
+        w = WorkspaceClient()
+        headers = w.config.authenticate()
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        host = w.config.host
+        if host and not host.startswith("http"):
+            host = f"https://{host}"
+    except Exception as e:
+        print(f"WARNING: Could not init WorkspaceClient for VS deletion: {e}")
+        return
+    url = f"{host}/api/2.0/vector-search/{path}"
+    req = urllib.request.Request(url, method="DELETE",
+                                  headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print(f"WARNING: DELETE {path} returned {e.code}: {e.read().decode()}")
+
+
 def _delete_vs_index(catalog: str, schema: str) -> None:
     full_index = f"{catalog}.{schema}.{VS_INDEX_NAME}"
     try:
-        from databricks.vector_search.client import VectorSearchClient
-        vs = VectorSearchClient(disable_notice=True)
-        vs.delete_index(index_name=full_index)
+        _vs_delete(f"indexes/{full_index}")
         print(f"Deleted VS index: {full_index}")
     except Exception as e:
         print(f"WARNING: Could not delete VS index '{full_index}': {e}")
+
+
+def _delete_vs_endpoint() -> None:
+    try:
+        _vs_delete(f"endpoints/{VS_ENDPOINT_NAME}")
+        print(f"Deleted VS endpoint: {VS_ENDPOINT_NAME}")
+    except Exception as e:
+        print(f"WARNING: Could not delete VS endpoint '{VS_ENDPOINT_NAME}': {e}")
 
 
 def _delete_serving_endpoints() -> None:
@@ -113,6 +145,7 @@ def _drop_schema(catalog: str, schema: str) -> None:
 def teardown(catalog: str, schema: str) -> None:
     print(f"=== inStockCV teardown: {catalog}.{schema} ===")
     _delete_vs_index(catalog, schema)
+    _delete_vs_endpoint()
     _delete_serving_endpoints()
     _delete_uc_models(catalog, schema)
     _drop_schema(catalog, schema)

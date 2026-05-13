@@ -13,6 +13,7 @@ import os
 import time
 
 INDEX_NAME = "instockcv_clip_index"
+VS_ENDPOINT_NAME = "instockcv-vs"
 CLIP_ENDPOINT_ENV = "CLIP_ENDPOINT"
 
 try:
@@ -117,6 +118,36 @@ def _write_embeddings_to_delta(spark, rows, catalog, schema):
     print(f"Wrote {len(rows)} embeddings to {catalog}.{schema}.sku_clip_embeddings")
 
 
+def _ensure_vs_endpoint(workspace_host: str, token: str) -> None:
+    """Create instockcv-vs endpoint if it doesn't exist and wait for ONLINE."""
+    _, err = _vs_request(workspace_host, token, "GET", f"endpoints/{VS_ENDPOINT_NAME}")
+    if err is None:
+        print(f"VS endpoint '{VS_ENDPOINT_NAME}' already exists.")
+        return
+
+    print(f"Creating VS endpoint '{VS_ENDPOINT_NAME}'...")
+    body = {"name": VS_ENDPOINT_NAME, "endpoint_type": "STANDARD"}
+    result, err = _vs_request(workspace_host, token, "POST", "endpoints", body)
+    if err:
+        raise RuntimeError(f"Failed to create VS endpoint: {err.read().decode()}")
+    print(f"VS endpoint '{VS_ENDPOINT_NAME}' created. Waiting for ONLINE (up to 20 min)...")
+
+    for _ in range(120):
+        result, err = _vs_request(workspace_host, token, "GET", f"endpoints/{VS_ENDPOINT_NAME}")
+        if err:
+            time.sleep(10)
+            continue
+        state = (result or {}).get("endpoint_status", {}).get("state", "")
+        print(f"  VS endpoint state: {state}")
+        if state == "ONLINE":
+            print(f"VS endpoint '{VS_ENDPOINT_NAME}' is ONLINE.")
+            return
+        if state in ("OFFLINE", "PROVISIONING_FAILED"):
+            raise RuntimeError(f"VS endpoint '{VS_ENDPOINT_NAME}' failed: {state}")
+        time.sleep(10)
+    raise RuntimeError(f"VS endpoint '{VS_ENDPOINT_NAME}' did not reach ONLINE within 20 minutes.")
+
+
 def _vs_request(workspace_host: str, token: str, method: str, path: str, body=None):
     import urllib.request
     import urllib.error
@@ -147,7 +178,7 @@ def _create_or_sync_vs_index(workspace_host, token, catalog, schema):
     print(f"Creating Direct Access index '{full_index_name}'...")
     body = {
         "name": full_index_name,
-        "endpoint_name": "databricks-vector-search",
+        "endpoint_name": VS_ENDPOINT_NAME,
         "primary_key": "combo_key",
         "index_type": "DIRECT_ACCESS",
         "direct_access_index_spec": {
@@ -200,6 +231,8 @@ def main():
 
     clip_endpoint = _load_clip_endpoint()
     volume_ref_dir = f"/Volumes/{catalog}/{schema}/scan_images/reference"
+
+    _ensure_vs_endpoint(host, token)
 
     print(f"Building CLIP embeddings from {volume_ref_dir}...")
     rows = _build_embeddings(volume_ref_dir, host, token, clip_endpoint)
