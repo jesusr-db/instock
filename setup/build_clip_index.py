@@ -201,6 +201,24 @@ def _create_or_sync_vs_index(workspace_host, token, catalog, schema):
     return full_index_name
 
 
+def _wait_for_vs_index_ready(workspace_host: str, token: str, full_index_name: str) -> None:
+    print(f"Waiting for VS index '{full_index_name}' to reach ONLINE...")
+    for _ in range(120):
+        result, err = _vs_request(workspace_host, token, "GET", f"indexes/{full_index_name}")
+        if err:
+            time.sleep(5)
+            continue
+        state = (result or {}).get("status", {}).get("detailed_state", "")
+        print(f"  VS index state: {state}")
+        if state == "ONLINE":
+            print(f"VS index '{full_index_name}' is ONLINE.")
+            return
+        if "FAILED" in state or "OFFLINE" in state:
+            raise RuntimeError(f"VS index '{full_index_name}' in terminal bad state: {state}")
+        time.sleep(10)
+    raise RuntimeError(f"VS index '{full_index_name}' did not reach ONLINE within 20 minutes.")
+
+
 def _upsert_to_vs_index(workspace_host, token, catalog, schema, rows):
     full_index_name = f"{catalog}.{schema}.{INDEX_NAME}"
     batch_size = 50
@@ -239,7 +257,8 @@ def main():
     print(f"Built {len(rows)} embeddings.")
 
     _write_embeddings_to_delta(spark, rows, catalog, schema)
-    _create_or_sync_vs_index(host, token, catalog, schema)
+    full_index = _create_or_sync_vs_index(host, token, catalog, schema)
+    _wait_for_vs_index_ready(host, token, full_index)
     _upsert_to_vs_index(host, token, catalog, schema, rows)
 
     output_path = DEFAULT_OUTPUT

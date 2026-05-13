@@ -142,13 +142,24 @@ def _create_or_update_endpoint(workspace_client, full_model_name: str, model_ver
 
     try:
         ep = workspace_client.serving_endpoints.get(ENDPOINT_NAME)
-        if str(ep.state.ready) == "EndpointStateReady.READY":
+        ready = str(ep.state.ready) if ep.state else ""
+        config_update = str(ep.state.config_update) if ep.state else ""
+        if ready == "EndpointStateReady.READY":
             print(f"Endpoint '{ENDPOINT_NAME}' already READY. Skipping.")
             return
-        print(f"Updating endpoint '{ENDPOINT_NAME}'...")
-        workspace_client.serving_endpoints.update_config(
-            name=ENDPOINT_NAME, served_models=served_models
+        # If a previous run left the endpoint mid-update, just wait — don't call update_config again
+        currently_updating = config_update not in (
+            "EndpointStateConfigUpdate.NOT_UPDATING",
+            "EndpointStateConfigUpdate.UPDATE_FAILED",
+            "",
         )
+        if currently_updating:
+            print(f"Endpoint '{ENDPOINT_NAME}' is already updating (update={config_update}). Waiting...")
+        else:
+            print(f"Updating endpoint '{ENDPOINT_NAME}'...")
+            workspace_client.serving_endpoints.update_config(
+                name=ENDPOINT_NAME, served_models=served_models
+            )
     except NotFound:
         print(f"Creating endpoint '{ENDPOINT_NAME}'...")
         workspace_client.serving_endpoints.create(name=ENDPOINT_NAME, config=config)
