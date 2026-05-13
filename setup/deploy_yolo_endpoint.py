@@ -2,17 +2,14 @@
 
 Steps:
   1. Define YoloPyfunc wrapper (ultralytics → detections list)
-  2. Pre-download model weights locally and bundle them as an MLflow artifact
+  2. Pre-download model weights from Hugging Face and bundle as an MLflow artifact
      (avoids network call to Hugging Face in the serving container)
   3. Log model to Unity Catalog with pip requirements
   4. Create or update 'instockcv-yolo' CPU Model Serving endpoint
   5. Write endpoint name to setup/yolo_endpoint_name.txt
 
-Usage (run locally — requires ultralytics, mlflow, Pillow):
+Usage:
     python -m setup.deploy_yolo_endpoint
-
-Note: Must run locally (not on Databricks serverless) because ultralytics
-downloads ~100 MB of model weights during logging.
 """
 from __future__ import annotations
 
@@ -100,16 +97,12 @@ def _log_yolo_model(workspace_client, catalog: str, schema: str) -> str:
     # Pre-download YOLO weights from Hugging Face and bundle as MLflow artifact
     print(f"Downloading YOLO model weights from HF repo '{HF_MODEL}'...")
     from huggingface_hub import hf_hub_download
-    from ultralytics import YOLO as _YOLO
     tmp_dir = tempfile.mkdtemp()
-    # Download best.pt from the HF repo directly
     hf_weights = hf_hub_download(repo_id=HF_MODEL, filename="best.pt")
     import shutil
     weights_path = os.path.join(tmp_dir, "best.pt")
     shutil.copy2(hf_weights, weights_path)
-    # Verify it loads correctly before registering
-    _ = _YOLO(weights_path)
-    print(f"Weights downloaded and verified: {weights_path} ({os.path.getsize(weights_path) // 1024 // 1024} MB)")
+    print(f"Weights downloaded: {weights_path} ({os.path.getsize(weights_path) // 1024 // 1024} MB)")
 
     mlflow.set_experiment("/Users/jesus.rodriguez@databricks.com/yolo_shelf_detector")
     with mlflow.start_run(run_name="yolo_shelf_detector_registration"):

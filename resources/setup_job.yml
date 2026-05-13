@@ -3,26 +3,6 @@ resources:
     setup_job:
       name: "[inStockCV] Setup"
 
-      # Shared cluster for the three model-deploy tasks. Serverless cannot install
-      # large ML packages (ultralytics, efficientvit, open-clip-torch), so these
-      # tasks run on a traditional single-node cluster with the CPU ML runtime,
-      # which pre-installs PyTorch and other ML foundations.
-      job_clusters:
-        - job_cluster_key: ml_deploy_cluster
-          new_cluster:
-            spark_version: "16.4.x-cpu-ml-scala2.12"
-            node_type_id: "c5.2xlarge"
-            num_workers: 0
-            spark_conf:
-              spark.databricks.cluster.profile: singleNode
-              spark.master: "local[*]"
-            custom_tags:
-              ResourceClass: SingleNode
-            aws_attributes:
-              ebs_volume_type: GENERAL_PURPOSE_SSD
-              ebs_volume_count: 1
-              ebs_volume_size: 64
-
       tasks:
         - task_key: create_endpoint
           spark_python_task:
@@ -32,7 +12,6 @@ resources:
         - task_key: deploy_yolo_endpoint
           depends_on:
             - task_key: create_endpoint
-          job_cluster_key: ml_deploy_cluster
           spark_python_task:
             python_file: ../setup/deploy_yolo_endpoint.py
             parameters:
@@ -40,21 +19,12 @@ resources:
               - ${var.catalog}
               - --schema
               - ${var.schema}
-          libraries:
-            - pypi:
-                package: "mlflow>=2.10.0"
-            - pypi:
-                package: "ultralytics>=8.0.0"
-            - pypi:
-                package: "huggingface_hub>=0.20.0"
-            - pypi:
-                package: "databricks-sdk>=0.28.0"
+          environment_key: ml_deploy
 
         # SAM and CLIP run in parallel — independent of YOLO and each other.
-        # efficientvit and open-clip-torch are only imported inside load_context
-        # (inference-time), so they are not needed at model-log time on the job cluster.
+        # All ML packages (ultralytics, efficientvit, open-clip-torch) are only imported
+        # inside load_context (inference-time), so serverless is sufficient at model-log time.
         - task_key: deploy_sam_endpoint
-          job_cluster_key: ml_deploy_cluster
           spark_python_task:
             python_file: ../setup/deploy_sam_endpoint.py
             parameters:
@@ -62,16 +32,9 @@ resources:
               - ${var.catalog}
               - --schema
               - ${var.schema}
-          libraries:
-            - pypi:
-                package: "mlflow>=2.10.0"
-            - pypi:
-                package: "huggingface_hub>=0.20.0"
-            - pypi:
-                package: "databricks-sdk>=0.28.0"
+          environment_key: ml_deploy
 
         - task_key: deploy_clip_endpoint
-          job_cluster_key: ml_deploy_cluster
           spark_python_task:
             python_file: ../setup/deploy_clip_endpoint.py
             parameters:
@@ -79,11 +42,7 @@ resources:
               - ${var.catalog}
               - --schema
               - ${var.schema}
-          libraries:
-            - pypi:
-                package: "mlflow>=2.10.0"
-            - pypi:
-                package: "databricks-sdk>=0.28.0"
+          environment_key: ml_deploy
 
         - task_key: provision_tables
           depends_on:
@@ -116,6 +75,14 @@ resources:
           spec:
             client: "1"
             dependencies:
+              - "databricks-sdk>=0.28.0"
+
+        - environment_key: ml_deploy
+          spec:
+            client: "1"
+            dependencies:
+              - "mlflow>=2.10.0"
+              - "huggingface_hub>=0.20.0"
               - "databricks-sdk>=0.28.0"
 
         - environment_key: clip_index
