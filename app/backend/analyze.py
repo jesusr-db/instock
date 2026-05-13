@@ -86,6 +86,7 @@ async def analyze(
     crop_x2: Optional[int] = Form(default=None),
     crop_y2: Optional[int] = Form(default=None),
     crop_source: Optional[str] = Form(default=None),
+    inference_mode: str = Form(default="vlm"),
 ):
     """Vision inference endpoint.
 
@@ -152,6 +153,32 @@ async def analyze(
     mime = "image/jpeg" if vlm_image_bytes is not image_bytes else (
         "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
     )
+
+    if inference_mode == "clip":
+        from backend.clip_match import clip_encode_image, clip_search, sam_refine_crop
+
+        crop_bytes = vlm_image_bytes
+        if user_crop_provided and all(v is not None for v in (crop_x1, crop_y1, crop_x2, crop_y2)):
+            crop_bytes = sam_refine_crop(
+                image_bytes,
+                (int(crop_x1), int(crop_y1), int(crop_x2), int(crop_y2)),  # type: ignore[arg-type]
+                settings,
+            )
+        embedding = clip_encode_image(crop_bytes, settings)
+        candidates = clip_search(embedding, settings)
+        top_candidate = candidates[0]["candidate_name"] if candidates else ""
+        return {
+            "scan_id": scan_id,
+            "model_route": "clip",
+            "image_volume_path": volume_path,
+            "detection_stage": detection_stage,
+            "brand": top_candidate.split()[0] if top_candidate else None,
+            "category": None,
+            "product_name": top_candidate or None,
+            "size": None,
+            "flavor": None,
+            "top_3_sku_candidates": candidates,
+        }
 
     client = OpenAI(
         api_key=get_databricks_token(settings),
