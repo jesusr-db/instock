@@ -102,6 +102,65 @@ CREATE TABLE IF NOT EXISTS {catalog}.{schema}.scan_log (
 """
 
 
+def build_ddl_sku_clip_embeddings(catalog: str, schema: str) -> str:
+    """Return CREATE TABLE DDL for the CLIP embedding reference table."""
+    return f"""
+CREATE TABLE IF NOT EXISTS {catalog}.{schema}.sku_clip_embeddings (
+    combo_key  STRING NOT NULL,
+    brand      STRING NOT NULL,
+    variant    STRING NOT NULL,
+    category   STRING NOT NULL,
+    embedding  ARRAY<FLOAT> NOT NULL
+) USING DELTA
+"""
+
+
+def _upload_reference_images(catalog: str, schema: str) -> None:
+    """Copy reference_images/ from bundle workspace to UC volume. Non-fatal."""
+    import shutil
+
+    candidate_roots = []
+    try:
+        here = os.path.dirname(os.path.abspath(__file__))
+        candidate_roots.append(os.path.join(here, "..", "reference_images"))
+    except NameError:
+        pass
+    candidate_roots.extend([
+        os.path.join(os.getcwd(), "reference_images"),
+        os.path.join(os.getcwd(), "..", "reference_images"),
+    ])
+
+    source_root = None
+    for r in candidate_roots:
+        if os.path.isdir(r):
+            source_root = os.path.abspath(r)
+            break
+
+    if source_root is None:
+        print("WARNING: reference_images/ directory not found — skipping image upload")
+        return
+
+    dest_root = f"/Volumes/{catalog}/{schema}/scan_images/reference"
+    try:
+        os.makedirs(dest_root, exist_ok=True)
+    except OSError as e:
+        print(f"WARNING: Cannot create {dest_root}: {e} — skipping image upload")
+        return
+
+    count = 0
+    for dirpath, _, filenames in os.walk(source_root):
+        for fname in filenames:
+            if not fname.endswith((".jpg", ".jpeg", ".png")):
+                continue
+            rel = os.path.relpath(os.path.join(dirpath, fname), source_root)
+            dest = os.path.join(dest_root, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if not os.path.exists(dest):
+                shutil.copy2(os.path.join(dirpath, fname), dest)
+                count += 1
+    print(f"Uploaded {count} reference images to {dest_root}")
+
+
 def create_tables(spark, catalog: str, schema: str, seed: int = 42) -> None:
     """Provision Unity Catalog schema + tables + volume, then load synthetic inventory.
 
@@ -114,6 +173,7 @@ def create_tables(spark, catalog: str, schema: str, seed: int = 42) -> None:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
     spark.sql(build_ddl_inventory(catalog, schema))
     spark.sql(build_ddl_scan_log(catalog, schema))
+    spark.sql(build_ddl_sku_clip_embeddings(catalog, schema))
     spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.scan_images")
 
     generate_inventory = _load_generate_inventory()
@@ -149,6 +209,7 @@ def create_tables(spark, catalog: str, schema: str, seed: int = 42) -> None:
 
     df.write.mode("overwrite").saveAsTable(f"{catalog}.{schema}.inventory")
     print(f"Loaded {len(rows)} rows into {catalog}.{schema}.inventory")
+    _upload_reference_images(catalog, schema)
 
 
 def main() -> None:
