@@ -16,6 +16,8 @@ import urllib.request
 from io import BytesIO
 from typing import TYPE_CHECKING
 
+from databricks.sdk import WorkspaceClient
+
 if TYPE_CHECKING:
     from backend.config import Settings
 
@@ -100,26 +102,16 @@ def clip_encode_image(image_bytes: bytes, settings: "Settings") -> list[float]:
 
 
 def _query_vs_index(embedding: list[float], settings: "Settings", top_k: int) -> list[dict]:
-    """Query VS Direct Access Index; return list of {combo_key, score} dicts."""
-    from databricks.vectorsearch.client import VectorSearchClient
-
-    vs_client = VectorSearchClient(
-        workspace_url=settings.databricks_host,
-        personal_access_token=settings.databricks_token or "",
-        disable_notice=True,
-    )
-    index = vs_client.get_index(index_name=settings.clip_vs_index_name)
-    response = index.similarity_search(
-        query_vector=embedding,
+    """Query VS Direct Access Index via SDK; return list of {combo_key, score} dicts."""
+    w = WorkspaceClient()
+    response = w.vector_search_indexes.query_index(
+        index_name=settings.clip_vs_index_name,
         columns=["combo_key"],
+        query_vector=embedding,
         num_results=top_k,
     )
-    results = []
-    for hit in response.get("result", {}).get("data_array", []):
-        combo_key = hit[0]
-        score = hit[-1]
-        results.append({"combo_key": combo_key, "score": score})
-    return results
+    rows = (response.result.data_array if response.result else None) or []
+    return [{"combo_key": row[0], "score": row[-1]} for row in rows]
 
 
 def clip_search(

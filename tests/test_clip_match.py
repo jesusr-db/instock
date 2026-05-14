@@ -115,3 +115,29 @@ def test_clip_search_handles_empty_vs_result():
         results = clip_search([0.0] * 512, _settings())
 
     assert results == []
+
+
+def test_query_vs_index_uses_sdk_not_vectorsearch_client():
+    """_query_vs_index must use WorkspaceClient SDK, not VectorSearchClient."""
+    from backend.clip_match import _query_vs_index
+
+    mock_row1 = ["DrPepper_Original_20oz", 0.95]
+    mock_row2 = ["Pepsi_Original_12oz", 0.82]
+    mock_result = MagicMock()
+    mock_result.data_array = [mock_row1, mock_row2]
+    mock_response = MagicMock()
+    mock_response.result = mock_result
+
+    with patch("backend.clip_match.WorkspaceClient") as mock_wc:
+        mock_wc.return_value.vector_search_indexes.query_index.return_value = mock_response
+        results = _query_vs_index([0.0] * 512, _settings(), top_k=2)
+
+    assert len(results) == 2
+    assert results[0]["combo_key"] == "DrPepper_Original_20oz"
+    assert results[0]["score"] == pytest.approx(0.95)
+    mock_wc.return_value.vector_search_indexes.query_index.assert_called_once_with(
+        index_name="cat.sc.instockcv_clip_index",
+        columns=["combo_key"],
+        query_vector=[0.0] * 512,
+        num_results=2,
+    )
