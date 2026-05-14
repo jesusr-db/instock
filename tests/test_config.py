@@ -70,7 +70,7 @@ def test_settings_yolo_threshold_override(monkeypatch):
 
 
 def test_clip_settings_default_to_empty(monkeypatch, tmp_path):
-    """clip_endpoint, sam_endpoint, clip_vs_index_name default to '' if txt files absent."""
+    """clip_endpoint and sam_endpoint default to '' if txt files absent; clip_vs_index_name uses hardcoded fallback."""
     import importlib
     import backend.config as cfg_module
 
