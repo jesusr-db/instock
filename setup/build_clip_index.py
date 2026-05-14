@@ -58,16 +58,36 @@ def _encode_image_base64(path: str) -> str:
 
 def _call_clip_endpoint(workspace_host: str, token: str, endpoint_name: str, image_b64: str) -> list[float]:
     import urllib.request
+    import urllib.error
     payload = json.dumps({"dataframe_records": [{"image": image_b64}]}).encode()
-    req = urllib.request.Request(
-        f"{workspace_host}/serving-endpoints/{endpoint_name}/invocations",
-        data=payload,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    embedding_str = result["predictions"][0]["embedding"]
-    return json.loads(embedding_str)
+    url = f"{workspace_host}/serving-endpoints/{endpoint_name}/invocations"
+    for attempt in range(5):
+        try:
+            req = urllib.request.Request(
+                url, data=payload,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read())
+            embedding_str = result["predictions"][0]["embedding"]
+            return json.loads(embedding_str)
+        except urllib.error.HTTPError as e:
+            # 4xx errors won't recover with retries
+            if 400 <= e.code < 500:
+                raise RuntimeError(f"CLIP endpoint rejected request (HTTP {e.code}): {e.read().decode()}") from e
+            if attempt < 4:
+                wait = 15 * (attempt + 1)
+                print(f"  CLIP endpoint HTTP {e.code} (attempt {attempt+1}/5). Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
+        except Exception as e:
+            if attempt < 4:
+                wait = 15 * (attempt + 1)
+                print(f"  CLIP endpoint call failed (attempt {attempt+1}/5): {e}. Retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 
 def _build_embeddings(volume_reference_dir, workspace_host, token, clip_endpoint):
@@ -203,20 +223,20 @@ def _create_or_sync_vs_index(workspace_host, token, catalog, schema):
 
 def _wait_for_vs_index_ready(workspace_host: str, token: str, full_index_name: str) -> None:
     print(f"Waiting for VS index '{full_index_name}' to reach ONLINE...")
-    for _ in range(120):
+    for _ in range(240):
         result, err = _vs_request(workspace_host, token, "GET", f"indexes/{full_index_name}")
         if err:
             time.sleep(5)
             continue
         state = (result or {}).get("status", {}).get("detailed_state", "")
         print(f"  VS index state: {state}")
-        if state == "ONLINE":
-            print(f"VS index '{full_index_name}' is ONLINE.")
+        if state.startswith("ONLINE"):
+            print(f"VS index '{full_index_name}' is ONLINE ({state}).")
             return
         if "FAILED" in state or "OFFLINE" in state:
             raise RuntimeError(f"VS index '{full_index_name}' in terminal bad state: {state}")
         time.sleep(10)
-    raise RuntimeError(f"VS index '{full_index_name}' did not reach ONLINE within 20 minutes.")
+    raise RuntimeError(f"VS index '{full_index_name}' did not reach ONLINE within 40 minutes.")
 
 
 def _upsert_to_vs_index(workspace_host, token, catalog, schema, rows):
@@ -253,7 +273,11 @@ def main():
     _ensure_vs_endpoint(host, token)
 
     print(f"Building CLIP embeddings from {volume_ref_dir}...")
+    if not os.path.isdir(volume_ref_dir):
+        raise RuntimeError(f"Reference image directory not found: {volume_ref_dir}. Upload reference images to the UC volume first.")
     rows = _build_embeddings(volume_ref_dir, host, token, clip_endpoint)
+    if not rows:
+        raise RuntimeError(f"No reference images found in {volume_ref_dir}. Expected subdirectories with {{brand}}_{{variant}}.jpg files.")
     print(f"Built {len(rows)} embeddings.")
 
     _write_embeddings_to_delta(spark, rows, catalog, schema)

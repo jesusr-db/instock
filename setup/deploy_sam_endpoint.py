@@ -1,13 +1,13 @@
-"""Deploy EfficientViT-SAM-L0 as an MLflow pyfunc endpoint.
+"""Deploy Meta SAM (ViT-B) as an MLflow pyfunc endpoint.
 
-Model: han-cai/efficientvit-sam, checkpoint xl1.pt (L1 variant)
-Endpoint: instockcv-sam (GPU Small, scale-to-zero)
+Model: facebook/segment-anything (sam_vit_b) — available on PyPI as 'segment-anything'
+Endpoint: instockcv-sam (CPU Small, scale-to-zero)
 
 Input:  DataFrame with "image" (base64 JPEG/PNG) and "bbox" (JSON "[x1,y1,x2,y2]")
 Output: DataFrame with "mask" (base64 PNG, same H×W as input, binary mask)
 
-Run locally (requires efficientvit, torch, torchvision, Pillow, huggingface_hub):
-    pip install efficientvit torch torchvision Pillow huggingface_hub mlflow databricks-sdk
+Run locally:
+    pip install segment-anything torch torchvision Pillow mlflow databricks-sdk
     python -m setup.deploy_sam_endpoint --catalog vdm_classic_rikfy0_catalog --schema instockcv_dev
 """
 from __future__ import annotations
@@ -16,8 +16,9 @@ import time
 
 ENDPOINT_NAME = "instockcv-sam"
 MODEL_NAME = "sam_shelf_segmenter"
-HF_REPO = "mit-han-lab/efficientvit-sam"
-HF_FILENAME = "efficientvit_sam_xl1.pt"
+SAM_CHECKPOINT_URL = "https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth"
+SAM_CHECKPOINT_FILENAME = "sam_vit_b_01ec64.pth"
+SAM_MODEL_TYPE = "vit_b"
 
 try:
     _here = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +42,7 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
     import mlflow.pyfunc
     import tempfile
     import shutil
+    import urllib.request
     import pandas as pd
 
     mlflow.set_registry_uri("databricks-uc")
@@ -58,11 +60,12 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
     class SamPyfunc(mlflow.pyfunc.PythonModel):
         def load_context(self, context):
             import torch
-            from efficientvit.sam_model_zoo import create_sam_model
-            from efficientvit.models.efficientvit.sam import EfficientViTSamPredictor
-            self.predictor = EfficientViTSamPredictor(
-                create_sam_model("xl1", pretrained=context.artifacts["sam_weights"])
-            )
+            from segment_anything import sam_model_registry, SamPredictor
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            sam = sam_model_registry[SAM_MODEL_TYPE](checkpoint=context.artifacts["sam_weights"])
+            sam.to(device=device)
+            sam.eval()
+            self.predictor = SamPredictor(sam)
 
         def predict(self, context, model_input: pd.DataFrame, params=None) -> pd.DataFrame:
             import base64
@@ -77,11 +80,11 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
                 bbox = json.loads(row["bbox"])
                 img_np = np.array(img)
                 self.predictor.set_image(img_np)
-                masks, iou_scores, _ = self.predictor.predict(
-                    box=np.array([bbox], dtype=float),
+                masks, scores, _ = self.predictor.predict(
+                    box=np.array(bbox, dtype=float),
                     multimask_output=True,
                 )
-                best_mask = masks[iou_scores.argmax()]
+                best_mask = masks[scores.argmax()]
                 mask_img = PILImage.fromarray((best_mask * 255).astype(np.uint8))
                 buf = BytesIO()
                 mask_img.save(buf, format="PNG")
@@ -96,12 +99,10 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
         outputs=Schema([ColSpec("string", "mask")]),
     )
 
-    print(f"Downloading EfficientViT-SAM weights from '{HF_REPO}'...")
-    from huggingface_hub import hf_hub_download
-    hf_weights = hf_hub_download(repo_id=HF_REPO, filename=HF_FILENAME)
+    print(f"Downloading SAM ViT-B weights from '{SAM_CHECKPOINT_URL}'...")
     tmp_dir = tempfile.mkdtemp()
-    weights_path = os.path.join(tmp_dir, HF_FILENAME)
-    shutil.copy2(hf_weights, weights_path)
+    weights_path = os.path.join(tmp_dir, SAM_CHECKPOINT_FILENAME)
+    urllib.request.urlretrieve(SAM_CHECKPOINT_URL, weights_path)
     print(f"Weights: {weights_path} ({os.path.getsize(weights_path) // 1024 // 1024} MB)")
 
     mlflow.set_experiment("/Users/jesus.rodriguez@databricks.com/sam_shelf_segmenter")
@@ -111,7 +112,7 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
             python_model=SamPyfunc(),
             artifacts={"sam_weights": weights_path},
             pip_requirements=[
-                "efficientvit>=2.1.0",
+                "segment-anything",
                 "torch>=2.0.0",
                 "torchvision>=0.15.0",
                 "Pillow>=10.3.0",
@@ -119,6 +120,7 @@ def _log_sam_model(workspace_client, catalog: str, schema: str) -> str:
             registered_model_name=full_model_name,
             signature=signature,
         )
+    shutil.rmtree(tmp_dir, ignore_errors=True)
     print(f"Model logged: {model_info.model_uri}")
     return full_model_name
 
@@ -147,13 +149,15 @@ def _create_or_update_endpoint(workspace_client, full_model_name: str, model_ver
         if ready == "EndpointStateReady.READY":
             print(f"Endpoint '{ENDPOINT_NAME}' already READY. Skipping.")
             return
-        # If a previous run left the endpoint mid-update, just wait — don't call update_config again
-        currently_updating = config_update not in (
+        if config_update == "EndpointStateConfigUpdate.UPDATE_FAILED":
+            print(f"Endpoint '{ENDPOINT_NAME}' is in UPDATE_FAILED. Deleting and recreating...")
+            workspace_client.serving_endpoints.delete(name=ENDPOINT_NAME)
+            time.sleep(15)
+            workspace_client.serving_endpoints.create(name=ENDPOINT_NAME, config=config)
+        elif config_update not in (
             "EndpointStateConfigUpdate.NOT_UPDATING",
-            "EndpointStateConfigUpdate.UPDATE_FAILED",
             "",
-        )
-        if currently_updating:
+        ):
             print(f"Endpoint '{ENDPOINT_NAME}' is already updating (update={config_update}). Waiting...")
         else:
             print(f"Updating endpoint '{ENDPOINT_NAME}'...")
@@ -175,8 +179,6 @@ def _create_or_update_endpoint(workspace_client, full_model_name: str, model_ver
         if (str(ready) == "EndpointStateReady.NOT_READY" and
                 str(config_update) == "EndpointStateConfigUpdate.NOT_UPDATING"):
             raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' failed (terminal NOT_READY).")
-        if str(config_update) == "EndpointStateConfigUpdate.UPDATE_FAILED":
-            raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' update failed.")
         time.sleep(10)
     raise RuntimeError(f"Endpoint '{ENDPOINT_NAME}' did not reach READY within 20 minutes.")
 
