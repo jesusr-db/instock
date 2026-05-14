@@ -55,14 +55,16 @@ def test_sam_refine_crop_returns_bytes_without_sam_endpoint():
 
 
 def test_sam_refine_crop_falls_back_on_endpoint_error():
-    """Even when sam_endpoint is set, an HTTP error falls back to plain crop."""
+    """Even when sam_endpoint is set, an SDK error falls back to plain crop."""
     from backend.clip_match import sam_refine_crop
 
     img_bytes = base64.b64decode(_tiny_jpeg_b64())
     s = _settings(sam_endpoint="instockcv-sam")
 
-    with patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+    with patch("backend.clip_match.WorkspaceClient") as mock_wc:
+        mock_wc.return_value.serving_endpoints.query.side_effect = Exception("timeout")
         result = sam_refine_crop(img_bytes, (0, 0, 1, 1), s)
+
     assert isinstance(result, bytes)
 
 
@@ -71,15 +73,11 @@ def test_clip_encode_image_returns_512d_vector():
     from backend.clip_match import clip_encode_image
 
     fake_embedding = [0.1] * 512
-    mock_response = json.dumps({"predictions": [{"embedding": json.dumps(fake_embedding)}]})
+    mock_response = MagicMock()
+    mock_response.predictions = [{"embedding": json.dumps(fake_embedding)}]
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_ctx = MagicMock()
-        mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
-        mock_ctx.__exit__ = MagicMock(return_value=False)
-        mock_ctx.read.return_value = mock_response.encode()
-        mock_urlopen.return_value = mock_ctx
-
+    with patch("backend.clip_match.WorkspaceClient") as mock_wc:
+        mock_wc.return_value.serving_endpoints.query.return_value = mock_response
         result = clip_encode_image(base64.b64decode(_tiny_jpeg_b64()), _settings())
 
     assert isinstance(result, list)
@@ -115,6 +113,46 @@ def test_clip_search_handles_empty_vs_result():
         results = clip_search([0.0] * 512, _settings())
 
     assert results == []
+
+
+def test_clip_encode_image_uses_sdk_not_urllib():
+    """clip_encode_image must use WorkspaceClient.serving_endpoints.query(), not urllib."""
+    from backend.clip_match import clip_encode_image
+
+    fake_embedding = [0.1] * 512
+    mock_response = MagicMock()
+    mock_response.predictions = [{"embedding": json.dumps(fake_embedding)}]
+
+    with patch("backend.clip_match.WorkspaceClient") as mock_wc:
+        mock_wc.return_value.serving_endpoints.query.return_value = mock_response
+        result = clip_encode_image(base64.b64decode(_tiny_jpeg_b64()), _settings())
+
+    assert len(result) == 512
+    assert all(isinstance(v, float) for v in result)
+    mock_wc.return_value.serving_endpoints.query.assert_called_once()
+    call_kwargs = mock_wc.return_value.serving_endpoints.query.call_args[1]
+    assert call_kwargs["name"] == "instockcv-clip"
+    assert "image" in call_kwargs["dataframe_records"][0]
+
+
+def test_sam_refine_crop_uses_sdk_not_urllib():
+    """sam_refine_crop must use WorkspaceClient.serving_endpoints.query(), not urllib."""
+    from backend.clip_match import sam_refine_crop
+
+    img_bytes = base64.b64decode(_tiny_jpeg_b64())
+    s = _settings(sam_endpoint="instockcv-sam")
+
+    mock_response = MagicMock()
+    mock_response.predictions = [{"mask": _tiny_jpeg_b64()}]
+
+    with patch("backend.clip_match.WorkspaceClient") as mock_wc:
+        mock_wc.return_value.serving_endpoints.query.return_value = mock_response
+        result = sam_refine_crop(img_bytes, (0, 0, 1, 1), s)
+
+    assert isinstance(result, bytes)
+    mock_wc.return_value.serving_endpoints.query.assert_called_once()
+    call_kwargs = mock_wc.return_value.serving_endpoints.query.call_args[1]
+    assert call_kwargs["name"] == "instockcv-sam"
 
 
 def test_query_vs_index_uses_sdk_not_vectorsearch_client():

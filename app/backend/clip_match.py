@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import base64
 import json
-import urllib.request
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -38,20 +37,12 @@ def sam_refine_crop(
 
     try:
         b64 = base64.b64encode(image_bytes).decode()
-        payload = json.dumps({
-            "dataframe_records": [{"image": b64, "bbox": json.dumps(list(bbox))}]
-        }).encode()
-        req = urllib.request.Request(
-            f"{settings.databricks_host}/serving-endpoints/{settings.sam_endpoint}/invocations",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {settings.databricks_token or ''}",
-                "Content-Type": "application/json",
-            },
+        w = WorkspaceClient()
+        response = w.serving_endpoints.query(
+            name=settings.sam_endpoint,
+            dataframe_records=[{"image": b64, "bbox": json.dumps(list(bbox))}],
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            result = json.loads(resp.read())
-        mask_b64 = result["predictions"][0]["mask"]
+        mask_b64 = response.predictions[0]["mask"]
         mask_bytes = base64.b64decode(mask_b64)
 
         orig = PILImage.open(BytesIO(image_bytes)).convert("RGB")
@@ -86,19 +77,12 @@ def _plain_crop(image_bytes: bytes, bbox: tuple[int, int, int, int]) -> bytes:
 def clip_encode_image(image_bytes: bytes, settings: "Settings") -> list[float]:
     """Encode image bytes to a 512-d CLIP embedding via the serving endpoint."""
     b64 = base64.b64encode(image_bytes).decode()
-    payload = json.dumps({"dataframe_records": [{"image": b64}]}).encode()
-    req = urllib.request.Request(
-        f"{settings.databricks_host}/serving-endpoints/{settings.clip_endpoint}/invocations",
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {settings.databricks_token or ''}",
-            "Content-Type": "application/json",
-        },
+    w = WorkspaceClient()
+    response = w.serving_endpoints.query(
+        name=settings.clip_endpoint,
+        dataframe_records=[{"image": b64}],
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-    embedding_str = result["predictions"][0]["embedding"]
-    return json.loads(embedding_str)
+    return json.loads(response.predictions[0]["embedding"])
 
 
 def _query_vs_index(embedding: list[float], settings: "Settings", top_k: int) -> list[dict]:
