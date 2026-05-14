@@ -114,3 +114,16 @@ def test_clip_settings_default_to_empty(monkeypatch, tmp_path):
     assert s.clip_vs_index_name == ""
 
     cfg_module.get_settings.cache_clear()
+
+
+def test_default_clip_vs_index_name_has_hardcoded_fallback():
+    """_default_clip_vs_index_name must never return empty string."""
+    import backend.config as cfg_module
+    from unittest.mock import patch
+
+    # Simulate no txt files present (both paths nonexistent)
+    with patch("backend.config.Path.is_file", return_value=False):
+        result = cfg_module._default_clip_vs_index_name()
+
+    assert result == "vdm_classic_rikfy0_catalog.instockcv_dev.instockcv_clip_index"
+    assert result != ""

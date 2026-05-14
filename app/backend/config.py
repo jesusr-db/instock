@@ -98,7 +98,7 @@ def _default_clip_vs_index_name() -> str:
                 return path.read_text().strip()
             except OSError:
                 continue
-    return ""
+    return "vdm_classic_rikfy0_catalog.instockcv_dev.instockcv_clip_index"
 
 
 def _default_databricks_host() -> str:

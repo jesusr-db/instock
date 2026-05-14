@@ -23,3 +23,9 @@ env:
     value: "0.3"
   - name: YOLO_ENDPOINT
     value: instockcv-yolo
+  - name: CLIP_ENDPOINT
+    value: instockcv-clip
+  - name: SAM_ENDPOINT
+    value: instockcv-sam
+  - name: CLIP_VS_INDEX_NAME
+    value: vdm_classic_rikfy0_catalog.instockcv_dev.instockcv_clip_index
