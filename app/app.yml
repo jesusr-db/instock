@@ -29,3 +29,17 @@ env:
     value: instockcv-sam
   - name: CLIP_VS_INDEX_NAME
     value: vdm_classic_rikfy0_catalog.instockcv_dev.instockcv_clip_index
+
+resources:
+  - name: instockcv-clip
+    serving_endpoint:
+      name: instockcv-clip
+      permission: CAN_QUERY
+  - name: instockcv-sam
+    serving_endpoint:
+      name: instockcv-sam
+      permission: CAN_QUERY
+  - name: instockcv-yolo
+    serving_endpoint:
+      name: instockcv-yolo
+      permission: CAN_QUERY
